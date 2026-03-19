@@ -107,3 +107,11 @@
 2026-03-19 19:54:45 | INFO     | system               | dispatch:27 | [2026-03-19 19:54:44] Completed response: 200 in 0.84 seconds
 2026-03-19 19:54:45 | INFO     | system               | dispatch:24 | [2026-03-19 19:54:45] Incoming request: GET http://localhost:7000/api/v1/app/app-configuration | IP: 127.0.0.1 | User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 |  Device: Desktop
 2026-03-19 19:54:45 | INFO     | system               | dispatch:27 | [2026-03-19 19:54:45] Completed response: 401 in 0.00 seconds
+2026-03-19 19:56:18 | INFO     | system               | dispatch:24 | [2026-03-19 19:56:18] Incoming request: GET http://localhost:7000/docs | IP: 127.0.0.1 | User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 |  Device: Desktop
+2026-03-19 19:56:18 | INFO     | system               | dispatch:27 | [2026-03-19 19:56:18] Completed response: 200 in 0.00 seconds
+2026-03-19 19:56:19 | INFO     | system               | dispatch:24 | [2026-03-19 19:56:19] Incoming request: GET http://localhost:7000/api/v1/openapi.json | IP: 127.0.0.1 | User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 |  Device: Desktop
+2026-03-19 19:56:19 | INFO     | system               | dispatch:27 | [2026-03-19 19:56:19] Completed response: 200 in 0.04 seconds
+2026-03-19 19:56:20 | INFO     | system               | dispatch:24 | [2026-03-19 19:56:20] Incoming request: GET http://localhost:7000/docs | IP: 127.0.0.1 | User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 |  Device: Desktop
+2026-03-19 19:56:20 | INFO     | system               | dispatch:27 | [2026-03-19 19:56:20] Completed response: 200 in 0.00 seconds
+2026-03-19 19:56:20 | INFO     | system               | dispatch:24 | [2026-03-19 19:56:20] Incoming request: GET http://localhost:7000/api/v1/openapi.json | IP: 127.0.0.1 | User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 |  Device: Desktop
+2026-03-19 19:56:20 | INFO     | system               | dispatch:27 | [2026-03-19 19:56:20] Completed response: 200 in 0.00 seconds
