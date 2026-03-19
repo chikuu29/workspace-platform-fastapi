@@ -54,3 +54,5 @@
 2026-03-19 21:06:17 | INFO     | database             | close_mongo_connection:21 | Closed MongoDB connection
 2026-03-19 21:06:18 | INFO     | database             | connect_to_mongo:16 | Connected to MongoDB
 2026-03-19 21:08:57 | INFO     | database             | close_mongo_connection:21 | Closed MongoDB connection
+2026-03-19 21:09:14 | INFO     | database             | connect_to_mongo:16 | Connected to MongoDB
+2026-03-19 21:11:18 | INFO     | database             | close_mongo_connection:21 | Closed MongoDB connection

@@ -145,7 +145,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # Order matters: last added = first to execute
 # So: LoggerMiddleware runs first → AuthMiddleware runs second → route handler
 
-app.add_middleware(AuthMiddleware)
+# app.add_middleware(AuthMiddleware)
 app.add_middleware(LoggerMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)

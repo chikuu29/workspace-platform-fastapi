@@ -267,3 +267,189 @@
 2026-03-19 21:06:18 | DEBUG    | system               | lifespan:30 | Loaded Settings: {'PROJECT_NAME': 'Workspace Platform API', 'VERSION': '1.0.0', 'API_V1_STR': '/api/v1', 'PORT': 7000, 'BACKEND_CORS_ORIGINS': ['http://localhost:5173'], 'STORAGE_ROOT': WindowsPath('storage'), 'FILE_UPLOAD_URL': '/public/storage', 'APP_NAME': 'Workspace API', 'ENV': 'development', 'LOG_LEVEL': 'INFO', 'MONGO_URI': 'mongodb://workspace_admin:admin123@localhost:27017/workspace_db?authSource=admin', 'DATABASE_NAME': 'workspace_db', 'OAUTH_CLIENT_ID': 'work_space_platform', 'OAUTH_CLIENT_SECRET': 'OGkIhxHycqQrggRDPGVuJ08qLPKB-Ghj__STUl9_coM', 'OAUTH_TOKEN_URI': 'http://localhost:8000/oauth2/token', 'OAUTH_OPENID_CONFIG_URL': 'http://localhost:8000/.well-known/openid-configuration', 'GOOGLE_CLIENT_ID': '', 'GOOGLE_CLIENT_SECRET': '', 'GOOGLE_OAUTH_CALLBACK_URL': 'http://localhost:5173/api/v1/oauth/google/callback', 'GOOGLE_AUTH_URL': 'https://accounts.google.com/o/oauth2/v2/auth', 'GOOGLE_TOKEN_URL': 'https://oauth2.googleapis.com/token', 'GOOGLE_USERINFO_URL': 'https://openidconnect.googleapis.com/v1/userinfo', 'SECRET_KEY': 'supersecretkey_change_me_in_prod', 'ALGORITHM': 'HS256', 'ACCESS_TOKEN_EXPIRE_MINUTES': 30, 'LOCAL_ACCESS_TOKEN_EXPIRE_SECONDS': 1800, 'LOCAL_REFRESH_TOKEN_EXPIRE_SECONDS': 604800, 'session_cookie_name': 'session_token', 'allowed_client_ids': ['work_space_platform'], 'APP_COLLECTION_MAP': {}}
 2026-03-19 21:06:21 | INFO     | system               | dispatch:24 | [2026-03-19 21:06:21] Incoming request: GET http://localhost:7000/api/v1/app/app-configuration | IP: 127.0.0.1 | User-Agent: PostmanRuntime/7.29.2 |  Device: Desktop
 2026-03-19 21:06:21 | INFO     | system               | dispatch:27 | [2026-03-19 21:06:21] Completed response: 200 in 0.51 seconds
+2026-03-19 21:09:14 | INFO     | system               | lifespan:23 | Starting Workspace Platform API (version: 1.0.0) on port 7000 in development environment
+2026-03-19 21:09:14 | DEBUG    | system               | lifespan:30 | Loaded Settings: {'PROJECT_NAME': 'Workspace Platform API', 'VERSION': '1.0.0', 'API_V1_STR': '/api/v1', 'PORT': 7000, 'BACKEND_CORS_ORIGINS': ['http://localhost:5173'], 'STORAGE_ROOT': WindowsPath('storage'), 'FILE_UPLOAD_URL': '/public/storage', 'APP_NAME': 'Workspace API', 'ENV': 'development', 'LOG_LEVEL': 'INFO', 'MONGO_URI': 'mongodb://workspace_admin:admin123@localhost:27017/workspace_db?authSource=admin', 'DATABASE_NAME': 'workspace_db', 'OAUTH_CLIENT_ID': 'work_space_platform', 'OAUTH_CLIENT_SECRET': 'OGkIhxHycqQrggRDPGVuJ08qLPKB-Ghj__STUl9_coM', 'OAUTH_TOKEN_URI': 'http://localhost:8000/oauth2/token', 'OAUTH_OPENID_CONFIG_URL': 'http://localhost:8000/.well-known/openid-configuration', 'GOOGLE_CLIENT_ID': '', 'GOOGLE_CLIENT_SECRET': '', 'GOOGLE_OAUTH_CALLBACK_URL': 'http://localhost:5173/api/v1/oauth/google/callback', 'GOOGLE_AUTH_URL': 'https://accounts.google.com/o/oauth2/v2/auth', 'GOOGLE_TOKEN_URL': 'https://oauth2.googleapis.com/token', 'GOOGLE_USERINFO_URL': 'https://openidconnect.googleapis.com/v1/userinfo', 'SECRET_KEY': 'supersecretkey_change_me_in_prod', 'ALGORITHM': 'HS256', 'ACCESS_TOKEN_EXPIRE_MINUTES': 30, 'LOCAL_ACCESS_TOKEN_EXPIRE_SECONDS': 1800, 'LOCAL_REFRESH_TOKEN_EXPIRE_SECONDS': 604800, 'session_cookie_name': 'session_token', 'allowed_client_ids': ['work_space_platform'], 'APP_COLLECTION_MAP': {}}
+2026-03-19 21:09:18 | INFO     | system               | dispatch:24 | [2026-03-19 21:09:18] Incoming request: GET http://localhost:7000/api/v1/app/app-configuration | IP: 127.0.0.1 | User-Agent: PostmanRuntime/7.29.2 |  Device: Desktop
+2026-03-19 21:09:18 | INFO     | system               | dispatch:27 | [2026-03-19 21:09:18] Completed response: 401 in 0.49 seconds
+2026-03-19 21:09:19 | INFO     | system               | dispatch:24 | [2026-03-19 21:09:19] Incoming request: GET http://localhost:7000/api/v1/app/app-configuration | IP: 127.0.0.1 | User-Agent: PostmanRuntime/7.29.2 |  Device: Desktop
+2026-03-19 21:09:19 | INFO     | system               | dispatch:27 | [2026-03-19 21:09:19] Completed response: 401 in 0.00 seconds
+2026-03-19 21:09:20 | INFO     | system               | dispatch:24 | [2026-03-19 21:09:20] Incoming request: GET http://localhost:7000/api/v1/app/app-configuration | IP: 127.0.0.1 | User-Agent: PostmanRuntime/7.29.2 |  Device: Desktop
+2026-03-19 21:09:20 | INFO     | system               | dispatch:27 | [2026-03-19 21:09:20] Completed response: 401 in 0.00 seconds
+2026-03-19 21:09:21 | INFO     | system               | dispatch:24 | [2026-03-19 21:09:21] Incoming request: GET http://localhost:7000/api/v1/app/app-configuration | IP: 127.0.0.1 | User-Agent: PostmanRuntime/7.29.2 |  Device: Desktop
+2026-03-19 21:09:21 | INFO     | system               | dispatch:27 | [2026-03-19 21:09:21] Completed response: 401 in 0.00 seconds
+2026-03-19 21:09:43 | INFO     | system               | dispatch:24 | [2026-03-19 21:09:43] Incoming request: GET http://localhost:7000/api/v1/app/app-configuration | IP: 127.0.0.1 | User-Agent: PostmanRuntime/7.29.2 |  Device: Desktop
+2026-03-19 21:09:43 | INFO     | system               | dispatch:27 | [2026-03-19 21:09:43] Completed response: 200 in 0.06 seconds
+2026-03-19 21:09:48 | INFO     | system               | dispatch:24 | [2026-03-19 21:09:48] Incoming request: GET http://localhost:7000/api/v1/app/app-configuration | IP: 127.0.0.1 | User-Agent: PostmanRuntime/7.29.2 |  Device: Desktop
+2026-03-19 21:09:48 | INFO     | system               | dispatch:27 | [2026-03-19 21:09:48] Completed response: 401 in 0.00 seconds
+2026-03-19 21:09:52 | INFO     | system               | dispatch:24 | [2026-03-19 21:09:52] Incoming request: GET http://localhost:7000/api/v1/app/app-configuration | IP: 127.0.0.1 | User-Agent: PostmanRuntime/7.29.2 |  Device: Desktop
+2026-03-19 21:09:52 | INFO     | system               | dispatch:27 | [2026-03-19 21:09:52] Completed response: 401 in 0.00 seconds
+2026-03-19 21:09:54 | INFO     | system               | dispatch:24 | [2026-03-19 21:09:54] Incoming request: GET http://localhost:7000/api/v1/app/app-configuration | IP: 127.0.0.1 | User-Agent: PostmanRuntime/7.29.2 |  Device: Desktop
+2026-03-19 21:09:54 | INFO     | system               | dispatch:27 | [2026-03-19 21:09:54] Completed response: 401 in 0.00 seconds
+2026-03-19 21:09:57 | INFO     | system               | dispatch:24 | [2026-03-19 21:09:57] Incoming request: GET http://localhost:7000/api/v1/app/app-configuration | IP: 127.0.0.1 | User-Agent: PostmanRuntime/7.29.2 |  Device: Desktop
+2026-03-19 21:09:57 | INFO     | system               | dispatch:27 | [2026-03-19 21:09:57] Completed response: 401 in 0.00 seconds
+2026-03-19 21:10:01 | INFO     | system               | dispatch:24 | [2026-03-19 21:10:01] Incoming request: GET http://localhost:7000/api/v1/app/app-configuration | IP: 127.0.0.1 | User-Agent: PostmanRuntime/7.29.2 |  Device: Desktop
+2026-03-19 21:10:01 | INFO     | system               | dispatch:27 | [2026-03-19 21:10:01] Completed response: 200 in 0.01 seconds
+2026-03-19 21:10:58 | INFO     | system               | dispatch:24 | [2026-03-19 21:10:58] Incoming request: GET http://localhost:7000/api/v1/app/ui_template?pageName=home&appName=myHostel | IP: 127.0.0.1 | User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 |  Device: Desktop
+2026-03-19 21:10:58 | ERROR    | system               | unhandled_exception_handler:133 | Unhandled exception: cannot access local variable 'request_context' where it is not associated with a value
+  + Exception Group Traceback (most recent call last):
+  |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_utils.py", line 81, in collapse_excgroups
+  |     yield
+  |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 192, in __call__
+  |     async with anyio.create_task_group() as task_group:
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    |     await self.app(scope, receive, _send)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 191, in __call__
+    |     with recv_stream, send_stream, collapse_excgroups():
+    |                                    ^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\Surayanarayan\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\contextlib.py", line 158, in __exit__
+    |     self.gen.throw(value)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_utils.py", line 87, in collapse_excgroups
+    |     raise exc
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 193, in __call__
+    |     response = await self.dispatch_func(request, call_next)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\app\core\middlewares\loggerMiddleware.py", line 25, in dispatch
+    |     response = await call_next(request)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    |     raise app_exc from app_exc.__cause__ or app_exc.__context__
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    |     await self.app(scope, receive_or_disconnect, send_no_error)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 191, in __call__
+    |     with recv_stream, send_stream, collapse_excgroups():
+    |                                    ^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\Surayanarayan\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\contextlib.py", line 158, in __exit__
+    |     self.gen.throw(value)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_utils.py", line 87, in collapse_excgroups
+    |     raise exc
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 193, in __call__
+    |     response = await self.dispatch_func(request, call_next)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\app\core\middlewares\auth_middleware.py", line 66, in dispatch
+    |     return await call_next(request)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    |     raise app_exc from app_exc.__cause__ or app_exc.__context__
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    |     await self.app(scope, receive_or_disconnect, send_no_error)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\cors.py", line 87, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\routing.py", line 716, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\routing.py", line 736, in app
+    |     await route.handle(scope, receive, send)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\routing.py", line 290, in handle
+    |     await self.app(scope, receive, send)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\fastapi\routing.py", line 130, in app
+    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\fastapi\routing.py", line 116, in app
+    |     response = await f(request)
+    |                ^^^^^^^^^^^^^^^^
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\fastapi\routing.py", line 670, in app
+    |     raw_response = await run_endpoint_function(
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\fastapi\routing.py", line 324, in run_endpoint_function
+    |     return await dependant.call(**values)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "D:\Development\SAAS\workspace\workspace-platform-fastapi\app\modules\app\router.py", line 42, in get_template
+    |     del request_context, current_user
+    |         ^^^^^^^^^^^^^^^
+    | UnboundLocalError: cannot access local variable 'request_context' where it is not associated with a value
+    +------------------------------------
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+                                   ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Surayanarayan\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\app\core\middlewares\loggerMiddleware.py", line 25, in dispatch
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+                                   ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Surayanarayan\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\app\core\middlewares\auth_middleware.py", line 66, in dispatch
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\fastapi\routing.py", line 130, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\fastapi\routing.py", line 116, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\fastapi\routing.py", line 670, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\.venv\Lib\site-packages\fastapi\routing.py", line 324, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Development\SAAS\workspace\workspace-platform-fastapi\app\modules\app\router.py", line 42, in get_template
+    del request_context, current_user
+        ^^^^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'request_context' where it is not associated with a value
+2026-03-19 21:11:01 | INFO     | system               | dispatch:24 | [2026-03-19 21:11:01] Incoming request: POST http://localhost:7000/api/v1/auth/logout | IP: 127.0.0.1 | User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 |  Device: Desktop
+2026-03-19 21:11:01 | INFO     | system               | dispatch:27 | [2026-03-19 21:11:01] Completed response: 200 in 0.50 seconds
+2026-03-19 21:11:02 | INFO     | system               | dispatch:24 | [2026-03-19 21:11:02] Incoming request: GET http://localhost:7000/api/v1/auth/me | IP: 127.0.0.1 | User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 |  Device: Desktop
+2026-03-19 21:11:02 | INFO     | system               | dispatch:27 | [2026-03-19 21:11:02] Completed response: 401 in 0.01 seconds
