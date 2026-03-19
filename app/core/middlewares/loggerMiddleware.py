@@ -6,11 +6,11 @@ from datetime import datetime
 
 
 from app.core.utils import get_device_type
-from app.core.logger import setup_logger
+from app.core.logger import create_logger
 
 
 
-logger = setup_logger('system')
+logger = create_logger('system')
 
 
 class LoggerMiddleware(BaseHTTPMiddleware):

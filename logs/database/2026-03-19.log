@@ -1,0 +1,3 @@
+2026-03-19 19:48:58 | INFO     | database             | connect_to_mongo:16 | Connected to MongoDB
+2026-03-19 19:49:43 | INFO     | database             | close_mongo_connection:21 | Closed MongoDB connection
+2026-03-19 19:49:45 | INFO     | database             | connect_to_mongo:16 | Connected to MongoDB

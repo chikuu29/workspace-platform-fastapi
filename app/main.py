@@ -10,14 +10,16 @@ from fastapi.staticfiles import StaticFiles
 from app.api.v1.api_router import api_router
 from app.core.config import settings
 from app.core.errors import ApiError
+from app.core.logger import startup_logger
 from app.core.responses import error_payload
 from app.db.database import close_mongo_connection, connect_to_mongo
 from app.core.response import ResponseHandler
 from app.core.middlewares.loggerMiddleware import LoggerMiddleware
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    startup_logger.info(f"Starting {settings.PROJECT_NAME} (version: {settings.VERSION}) on port {settings.PORT} in {settings.ENV} environment")
+    startup_logger.debug(f"Loaded Settings: {settings.model_dump()}")
     await connect_to_mongo()
     yield
     await close_mongo_connection()
