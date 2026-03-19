@@ -27,11 +27,13 @@ async def get_template(
 
 @router.get("/app-configuration")
 async def generate_config(
+    request: Request,
     service: AppService = Depends(get_app_service),
-    request_context: RequestContext = Depends(require_request_context),
-    current_user: dict = Depends(get_current_user),
+    # request_context: RequestContext = Depends(require_request_context),
+    # current_user: dict = Depends(get_current_user),
 ):
-    del request_context, current_user
+    # del request_context, current_user
+    print(f"Received request for app configuration: {request}")
     config = await service.get_app_configuration()
     if config:
         return success_response(payload={"result": {"config": config}})

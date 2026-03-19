@@ -110,8 +110,6 @@ class AuthService:
 
     async def login(self, payload: LoginRequest, ip: str, user_agent: str, client_name: str) -> Dict[str, Any]:
         self.logger.info(f"Login attempt for user: {payload.loginId} from IP: {ip}")
-    async def login(self, payload: LoginRequest, ip: str, user_agent: str, client_name: str) -> Dict[str, Any]:
-        self.logger.info(f"Login attempt for user: {payload.loginId} from IP: {ip}")
         user = await self.repository.find_user_by_login(payload.loginId)
         if not user:
             self.logger.warning(f"Login failed: User {payload.loginId} not found")
