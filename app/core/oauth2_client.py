@@ -5,7 +5,7 @@ import httpx
 from jose import jwt, JWTError
 
 from app.core.config import settings
-
+from fastapi import HTTPException, status
 logger = logging.getLogger(__name__)
 
 class OAuth2Client:
@@ -156,47 +156,80 @@ class OAuth2Client:
             response.raise_for_status()
             return response.json()
 
-    async def validate_token(self, token: str) -> Optional[Dict[str, Any]]:
+  
+
+    async def validate_token(self, token: str) -> Dict[str, Any]:
         """
-        Validate a JWT against the OAuth2 server's JWKS.
+        Validate a JWT against JWKS with strict checks.
+        Raises HTTPException if invalid.
         """
         try:
             jwks = await self.get_jwks()
 
+            # Decode header
             unverified_header = jwt.get_unverified_header(token)
             if not unverified_header:
-                raise ValueError("Unable to decode JWT header.")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token header"
+                )
 
             kid = unverified_header.get("kid")
             if not kid:
-                raise ValueError("JWT header lacks a key id (kid).")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Missing 'kid' in token"
+                )
 
+            # Find matching key
             jwk = next((key for key in jwks if key.get("kid") == kid), None)
 
             if not jwk:
-                # JWKS might have rotated, force refetch once
-                self._jwks_cache = None
-                fresh_jwks = await self.get_jwks()
-                jwk = next((key for key in fresh_jwks if key.get("kid") == kid), None)
+                # Retry after cache clear (key rotation)
+                self.clear_cache()
+                jwks = await self.get_jwks()
+                jwk = next((key for key in jwks if key.get("kid") == kid), None)
 
             if not jwk:
-                raise ValueError(f"No matching JWK found for kid: {kid}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid signing key"
+                )
 
+            discovery = await self.get_discovery()
+            issuer = discovery.get("issuer")
+
+            # 🔐 STRICT VALIDATION
             payload = jwt.decode(
                 token,
                 jwk,
                 algorithms=["RS256"],
                 audience=settings.OAUTH_CLIENT_ID,
-                options={"verify_aud": False}  # Configure based on actual requirements
+                issuer=issuer,
             )
 
+            # Extra optional checks
+            if payload.get("token_type") not in ["access_token", "Bearer"]:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token type"
+                )
+
             return payload
+
         except JWTError as e:
-            logger.error(f"❌ Token validation failed (JWTError): {e}")
-            return None
+            logger.error(f"❌ JWT validation failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
         except Exception as e:
-            logger.error(f"❌ Token validation failed: {e}")
-            return None
+            logger.error(f"❌ Token validation error: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token validation failed"
+            )
 
     def _get_auth_server_base(self) -> str:
         """
