@@ -16,10 +16,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.core.logger import create_logger
+from app.core.logger import setup_logger
 from app.db.redis_store import redis_client
 
-logger = create_logger("rate_limiter")
+logger = setup_logger("rate_limiter")
 
 # Rate limit configuration — configurable via env vars
 RATE_LIMIT_LOGIN = int(os.getenv("RATE_LIMIT_LOGIN", "10"))
