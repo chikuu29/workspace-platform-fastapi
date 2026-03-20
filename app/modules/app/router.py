@@ -37,9 +37,9 @@ async def get_app_configuration(
 async def get_template(
     request: Request,
     service: AppService = Depends(get_app_service),
-    identity=Depends(get_authenticated_identity),
+   
 ):
-    del request_context, current_user
+    
     query = dict(request.query_params)
     template = await service.get_templates(query)
     if template:
