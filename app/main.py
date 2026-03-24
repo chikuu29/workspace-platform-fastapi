@@ -15,7 +15,7 @@ from app.core.responses import error_payload
 from app.db.database import close_mongo_connection, connect_to_mongo
 from app.core.middlewares.loggerMiddleware import LoggerMiddleware
 from app.core.middlewares.auth_middleware import AuthMiddleware
-
+from app.core.middlewares.security_middleware import SecurityMiddleware
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -147,6 +147,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 # app.add_middleware(AuthMiddleware)
 app.add_middleware(LoggerMiddleware)
+app.add_middleware(SecurityMiddleware)
+
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 

@@ -12,6 +12,8 @@ from app.core.responses import success_response
 from app.modules.auth.schemas import LoginRequest, RegisterRequest
 from app.modules.auth.service import AuthService
 from app.modules.auth.dependencies import get_auth_service
+from app.core.logger import create_logger
+logger= create_logger(__name__)
 
 router = APIRouter()
 
@@ -161,10 +163,15 @@ async def refresh_token(request: Request, service: AuthService = Depends(get_aut
 async def logout_user(request: Request, access_token: Optional[str] = Depends(extract_bearer_token)):
     """Revoke tokens and clear session cookies."""
     session_token = request.cookies.get(settings.session_cookie_name)
+    print("access token: %s", access_token)
+    print("Logout user: %s", session_token)
     try:
         if access_token and session_token:
+            logger.info(f"Revoking access token and session token for logout. Access Token: {access_token}, Session Token: {session_token}")
             await oauth2_client.revoke_token(access_token, session_token)
         elif access_token:
+            logger.info(f"Revoking access token for logout. Access Token: {access_token}")
+                
             await oauth2_client.revoke_all_sessions(access_token)
     except Exception:
         pass  # Best-effort revocation — don't block logout on server errors
@@ -174,5 +181,5 @@ async def logout_user(request: Request, access_token: Optional[str] = Depends(ex
         message="Logged out successfully",
     )
     clear_auth_cookie(response, settings.session_cookie_name)
-    clear_auth_cookie(response, "refresh_token", same_site="lax")
+    # clear_auth_cookie(response, "refresh_token", same_site="lax")
     return response

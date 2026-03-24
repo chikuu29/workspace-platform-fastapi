@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Request, HTTPException, Query
+from fastapi import APIRouter, Depends, Request, HTTPException, Query
 from datetime import datetime
 from typing import Optional
+from app.core.security.authentications import get_authenticated_identity
 from app.db.database import get_database
 from app.db.sequence import generate_monthly_sequence, generate_simple_sequence
 from bson import ObjectId
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[Depends(get_authenticated_identity)]
+)
 
 # Helper to format MongoDB document for JSON response
 def serialize_doc(doc):
@@ -16,10 +19,12 @@ def serialize_doc(doc):
 
 @router.post("/addMember")
 async def add_member(request: Request):
+    print("Received request to add member",request.state.__dict__)  # Debug: Check security headers from middleware
+
     db = get_database()
-    
     # 1. Extract contextual data from Request/Payload
     payload = await request.json()
+    print("Payload received:", payload)
     # In a real app, org_id comes from JWT token, here we simulate getting it from payload headers or body
     org_id = payload.get("org_id", "default_org") 
     app_id = payload.get("app_id", "myGym")
