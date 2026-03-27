@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, Request
 
 from app.core.security.authentications import get_authenticated_identity
 from app.core.responses import success_response
-from app.modules.app.service import AppService
-from app.modules.app.dependencies import get_app_service
+from app.modules.system.service import AppService
+from app.modules.system.dependencies import get_app_service
 
 
 router = APIRouter(
@@ -21,6 +21,7 @@ async def get_app_configuration(
     Get application configuration for authenticated user
     """
     identity = request.state.user
+    print(f"header",request.state.security_headers)
     print(identity)  # ✅ available
 
     config = await service.get_app_configuration()

@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from fastapi import UploadFile
 from app.core.config import settings
-from app.modules.app.repository import AppRepository
+from app.modules.system.repository import AppRepository
 from app.core.logger import create_logger
 
 class AppService:

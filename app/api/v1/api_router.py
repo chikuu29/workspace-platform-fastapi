@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.modules.app.router import router as app_router
+from app.modules.system.router import router as app_router
 from app.modules.auth.router import router as auth_router
 from app.modules.gym.router import router as gym_router
 from app.modules.oauth.router import router as oauth_router
