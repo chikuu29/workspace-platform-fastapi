@@ -84,7 +84,7 @@ class PermissionChecker(AuthorizationChecker):
         is_superuser = auth_block.get("is_superuser", False) or identity.get("is_superuser", False)
         print(user_type, is_root_user, is_superuser)
         # Bypass checks for Platform admins, Root users, and Superusers
-        if user_type == "PLATFORM" or is_root_user or is_superuser:
+        if user_type == "SYSTEM" or is_root_user or is_superuser:
             return identity
 
         user_perms = auth_block.get("permissions", [])
@@ -127,8 +127,8 @@ class FeatureGate(AuthorizationChecker):
         auth_block = identity.get("authorization") or identity
         user_type = auth_block.get("user_type") or identity.get("user_type")
 
-        # PLATFORM users bypass feature check
-        if user_type == "PLATFORM":
+        # SYSTEM users bypass feature check
+        if user_type == "SYSTEM":
             return identity
 
         if self.operator == "AND":
@@ -196,7 +196,7 @@ async def get_org_identity(
     the authenticated identity. Supports both nested and flat identity formats.
 
     Returns a unified dict with:
-        user_type        — "PLATFORM" | "ORGANIZATION"
+        user_type        — "SYSTEM" | "ORGANIZATION"
         is_root_user     — bool
         is_superuser     — bool
         organization_id  — int or None
