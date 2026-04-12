@@ -17,6 +17,6 @@ RUN uv sync --no-dev
 
 COPY . .
 
-EXPOSE 7000
+EXPOSE 8001
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7000"]
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

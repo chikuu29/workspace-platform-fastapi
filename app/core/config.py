@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Workspace Platform API"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
-    PORT: int = 7000
+    PORT: int = 8001
     BACKEND_CORS_ORIGINS: Annotated[List[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost", "http://localhost:3000"],
         validation_alias=AliasChoices("BACKEND_CORS_ORIGINS", "CORS_ORIGINS"),
