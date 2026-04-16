@@ -17,4 +17,6 @@ dependencies = [
     "python-jose[cryptography]>=3.5.0",
     "python-multipart>=0.0.22",
     "uvicorn>=0.42.0",
+    "gunicorn>=23.0.0",
+    "prometheus-fastapi-instrumentator>=7.0.0",
 ]

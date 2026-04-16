@@ -16,6 +16,8 @@ from app.db.database import close_mongo_connection, connect_to_mongo
 from app.core.middlewares.loggerMiddleware import LoggerMiddleware
 from app.core.middlewares.auth_middleware import AuthMiddleware
 from app.core.middlewares.security_middleware import SecurityMiddleware
+from app.modules.health.router import router as health_router
+from prometheus_fastapi_instrumentator import Instrumentator
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -150,7 +152,17 @@ app.add_middleware(LoggerMiddleware)
 app.add_middleware(SecurityMiddleware)
 
 
+# ── API v1 routes (require auth via middleware) ────────────────────────────
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# ── Health & Observability (no auth — must be reachable by K8s probes) ────
+# Registered at root path so liveness/readiness probes work without tokens.
+app.include_router(health_router)
+
+# ── Prometheus Metrics ─────────────────────────────────────────────────────
+# Expose /metrics for Prometheus scraping. Registered LAST so all routes
+# are instrumented, including health endpoints above.
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 
 @app.get("/")
