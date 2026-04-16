@@ -1,0 +1,27 @@
+# Exclude dev environment files — these contain localhost URLs that break Kubernetes.
+# Kubernetes injects real values via ConfigMaps and SealedSecrets at runtime.
+.env
+.env.*
+.env.development
+.env.local
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+
