@@ -21,7 +21,14 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str = "Workspace Platform API"
     VERSION: str = "1.0.0"
-    API_V1_STR: str = "/api/v1"
+    # WHY "/v1" not "/api/v1":
+    # root_path="/api" in main.py already contributes the /api segment to
+    # Swagger's generated URLs.  If this were "/api/v1", every route would
+    # appear as /api/api/v1/... in Swagger and all proxy rewrites would break.
+    # Actual request path chain:
+    #   PROD: nginx strips /api  → pod receives /v1/route  ✅
+    #   DEV:  vite strips /backend → pod receives /v1/route ✅
+    API_V1_STR: str = "/v1"
     PORT: int = 8001
     BACKEND_CORS_ORIGINS: Annotated[List[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost", "http://localhost:3000"],
