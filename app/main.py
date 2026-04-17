@@ -38,6 +38,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
+    # root_path informs FastAPI/Swagger that this app is reverse-proxied under /api.
+    # Without this, Swagger UI fetches /v1/openapi.json from the domain root,
+    # which nginx cannot route to the backend (it hits React SPA → returns HTML).
+    # With root_path="/api", the generated OpenAPI schema uses /api/v1/... paths
+    # and Swagger's "Try it out" sends requests through the nginx proxy correctly.
+    root_path="/api",
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     lifespan=lifespan,
 )
