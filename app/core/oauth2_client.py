@@ -56,15 +56,19 @@ class OAuth2Client:
         """
         Fetch and cache JWKS (JSON Web Key Set) from the OAuth2 server.
         Used for validating JWT signatures.
+
+        WHY: The discovery document returns a public-facing jwks_uri
+        (e.g. https://identity.local/.well-known/jwks.json) which is only
+        reachable via the NGINX ingress — not pod-to-pod inside the cluster.
+        We derive the JWKS URI from the internal base URL instead.
         """
         now = time.time()
         if self._jwks_cache and (now - self._jwks_cached_at) < self._cache_ttl:
             return self._jwks_cache
 
-        discovery = await self.get_discovery()
-        jwks_uri = discovery.get("jwks_uri")
-        if not jwks_uri:
-            raise ValueError("jwks_uri not found in OpenID discovery document.")
+        # Derive internal JWKS URI from the base we already have
+        # e.g. http://identity-backend.identity.svc.cluster.local:8000/.well-known/jwks.json
+        jwks_uri = f"{self._get_auth_server_base()}/.well-known/jwks.json"
 
         async with httpx.AsyncClient() as client:
             response = await client.get(jwks_uri)
@@ -88,6 +92,7 @@ class OAuth2Client:
         Exchange an authorization code for tokens (authorization_code grant).
         """
         discovery = await self.get_discovery()
+        logger.info("Discovery: %s", discovery)
         token_url = settings.OAUTH_TOKEN_URI or discovery.get("token_endpoint")
         
         if not token_url:
@@ -141,12 +146,15 @@ class OAuth2Client:
     async def get_user_info(self, access_token: str) -> Dict[str, Any]:
         """
         Fetch the authenticated user's profile from the OAuth2 server's userinfo endpoint.
-        """
-        discovery = await self.get_discovery()
-        userinfo_url = discovery.get("userinfo_endpoint")
 
-        if not userinfo_url:
-            raise ValueError("userinfo_endpoint not found in OpenID discovery document.")
+        WHY: The discovery document returns public-facing URLs (e.g. https://identity.local)
+        which are only reachable via the NGINX ingress — not from inside the cluster.
+        We derive the userinfo URL from OAUTH_OPENID_CONFIG_URL's base instead, which
+        already uses the internal Kubernetes DNS (identity-backend.identity.svc.cluster.local).
+        """
+        # Derive internal userinfo URL from the base we already have
+        # e.g. http://identity-backend.identity.svc.cluster.local:8000/oauth2/userinfo
+        userinfo_url = f"{self._get_auth_server_base()}/oauth2/userinfo"
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -155,6 +163,7 @@ class OAuth2Client:
             )
             response.raise_for_status()
             return response.json()
+
 
   
 
