@@ -2,11 +2,12 @@
 Structured Logging Module — Production-Grade Logger for the OAuth Platform.
 
 Provides:
-- File-based rotating log handler (daily rotation, 30-day retention)
-- Console handler with colored output for development
+- File-based rotating log handler for local development (daily rotation, 30-day retention)
+- Console handler for runtime output
 - Structured log format with timestamps, levels, and module context
 - Singleton pattern: prevents duplicate handler attachment
 - Environment-aware: DEBUG level in development, INFO in production
+- Configurable: LOG_TO_FILE toggles file logging, LOG_DIR controls the log path
 
 Usage:
     from app.core.logger import create_logger
@@ -22,7 +23,7 @@ from datetime import datetime
 
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-_LOG_BASE_DIR = os.path.join(
+_DEFAULT_LOG_BASE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "..",
     "logs",
@@ -30,6 +31,17 @@ _LOG_BASE_DIR = os.path.join(
 
 _ENV = os.getenv("ENV", "development").lower()
 _LOG_LEVEL = logging.DEBUG if _ENV == "development" else logging.INFO
+_LOG_BASE_DIR = os.path.abspath(os.getenv("LOG_DIR", _DEFAULT_LOG_BASE_DIR))
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+_LOG_TO_FILE = _env_flag("LOG_TO_FILE", _ENV in {"development", "local"})
 
 # ── Format Strings ────────────────────────────────────────────────────────────
 _FILE_FORMAT = (
@@ -46,7 +58,7 @@ _initialized_loggers: set[str] = set()
 
 def create_logger(name: str) -> logging.Logger:
     """
-    Create or retrieve a structured logger with file and console handlers.
+    Create or retrieve a structured logger with environment-aware handlers.
 
     Uses a singleton pattern — calling with the same name returns the
     previously configured logger without adding duplicate handlers.
@@ -69,19 +81,20 @@ def create_logger(name: str) -> logging.Logger:
     logger.propagate = False
 
     # ── File Handler: daily rotating log files ────────────────────────────
-    log_dir = os.path.join(_LOG_BASE_DIR, name)
-    os.makedirs(log_dir, exist_ok=True)
+    if _LOG_TO_FILE:
+        log_dir = os.path.join(_LOG_BASE_DIR, name)
+        os.makedirs(log_dir, exist_ok=True)
 
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    file_handler = logging.handlers.TimedRotatingFileHandler(
-        filename=os.path.join(log_dir, f"{current_date}.log"),
-        when="midnight",
-        backupCount=30,
-        encoding="utf-8",
-    )
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(logging.Formatter(_FILE_FORMAT, datefmt=_DATE_FORMAT))
-    logger.addHandler(file_handler)
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        file_handler = logging.handlers.TimedRotatingFileHandler(
+            filename=os.path.join(log_dir, f"{current_date}.log"),
+            when="midnight",
+            backupCount=30,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(_LOG_LEVEL)
+        file_handler.setFormatter(logging.Formatter(_FILE_FORMAT, datefmt=_DATE_FORMAT))
+        logger.addHandler(file_handler)
 
     # ── Console Handler: human-readable output for development ────────────
     console_handler = logging.StreamHandler(sys.stdout)
