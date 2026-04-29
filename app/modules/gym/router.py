@@ -36,8 +36,70 @@ def _record_query(identifier: str) -> dict:
         query["$or"].append({"_id": ObjectId(identifier)})
     return query
 
+# ── DASHBOARD STATS ───────────────────────────────────────────────────
 
-# ── CREATE ───────────────────────────────────────────────────────────
+@router.get("/dashboard/stats")
+async def get_dashboard_stats(
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """
+    Aggregate gym dashboard KPI data in a single backend call.
+    Returns member counts by status and the 5 most recently enrolled members.
+    """
+    repo = OrgRepository(db, "records", ctx)
+    base = {"_meta.entity_type": "member"}
+
+    # Aggregate counts
+    total = await repo.count(base)
+    active = await repo.count({**base, "data.status": "active"})
+    attention = await repo.count({**base, "data.status": "attention"})
+    frozen = await repo.count({**base, "data.status": "frozen"})
+
+    # Monthly additions (simulated with created.at if real dates exist, or just 0 for now)
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    
+    added_this_month = await repo.count({
+        **base,
+        "_meta.created.at": {"$gte": month_start}
+    })
+
+    # Recent members
+    recent_docs = await repo.find(
+        base,
+        sort=[("_meta.created.at", -1)],
+        limit=5
+    )
+
+    recent_members = [
+        {
+            "record_id": d["_meta"]["record_id"],
+            "name": f"{d['data'].get('firstName', '')} {d['data'].get('lastName', '')}".strip() or "Unknown",
+            "plan": d['data'].get('plan', 'N/A'),
+            "created_at": d['_meta']['created']['at']
+        }
+        for d in recent_docs
+    ]
+
+    return {
+        "success": True,
+        "data": {
+            "kpis": {
+                "total_members": total,
+                "active_members": active,
+                "attention_members": attention,
+                "frozen_members": frozen,
+                "members_added_this_month": added_this_month,
+                "revenue_mrr": 45200, # Placeholder until billing module is active
+                "checkins_today": 186, # Placeholder until check-in module is active
+                "trainer_utilization": 81 # Placeholder until trainer module is active
+            },
+            "recent_members": recent_members
+        }
+    }
+
 
 @router.post("/addMember")
 async def add_member(
