@@ -5,14 +5,21 @@ All endpoints use OrgContext for secure multi-tenant data access.
 - org_id / org_uuid → from JWT
 - app_id → from x-app-code header
 - request data → validated through Pydantic schemas
+
+Response contract (via app.common.responses):
+    Success → { "success": True,  "message": "...", "data": {...} }
+    Error   → { "success": False, "message": "...", "error_code": "..." }
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, Query, Request
 from bson import ObjectId
 
 from app.core.context import OrgContext, get_org_context
 from app.core.security.authentications import get_authenticated_identity
 from app.common.org_repository import OrgRepository
+from app.common.responses import ok, created, paginated, deleted, not_found, bad_request, conflict
 from app.db.database import get_database
 from app.db.org_sequence import OrgSequenceService
 from app.modules.gym.schemas import sanitize_payload
@@ -20,6 +27,14 @@ from app.modules.gym.schemas import sanitize_payload
 router = APIRouter(
     dependencies=[Depends(get_authenticated_identity)]
 )
+
+# ── Constants ────────────────────────────────────────────────────────
+
+ENTITY_TYPE = "member"
+"""Canonical entity type used across all member queries and inserts."""
+
+MEMBER_QUERY = {"_meta.entity_type": ENTITY_TYPE}
+"""Base filter that scopes all queries to member documents only."""
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -36,6 +51,7 @@ def _record_query(identifier: str) -> dict:
         query["$or"].append({"_id": ObjectId(identifier)})
     return query
 
+
 # ── DASHBOARD STATS ───────────────────────────────────────────────────
 
 @router.get("/dashboard/stats")
@@ -48,58 +64,58 @@ async def get_dashboard_stats(
     Returns member counts by status and the 5 most recently enrolled members.
     """
     repo = OrgRepository(db, "records", ctx)
-    base = {"_meta.entity_type": "member"}
 
     # Aggregate counts
-    total = await repo.count(base)
-    active = await repo.count({**base, "data.status": "active"})
-    attention = await repo.count({**base, "data.status": "attention"})
-    frozen = await repo.count({**base, "data.status": "frozen"})
+    total = await repo.count(MEMBER_QUERY)
+    active = await repo.count({**MEMBER_QUERY, "data.status": "active"})
+    attention = await repo.count({**MEMBER_QUERY, "data.status": "attention"})
+    frozen = await repo.count({**MEMBER_QUERY, "data.status": "frozen"})
 
-    # Monthly additions (simulated with created.at if real dates exist, or just 0 for now)
-    from datetime import datetime, timezone
+    # Monthly additions
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
-    
+
     added_this_month = await repo.count({
-        **base,
-        "_meta.created.at": {"$gte": month_start}
+        **MEMBER_QUERY,
+        "_meta.created.at": {"$gte": month_start},
     })
 
     # Recent members
     recent_docs = await repo.find(
-        base,
+        MEMBER_QUERY,
         sort=[("_meta.created.at", -1)],
-        limit=5
+        limit=5,
     )
 
     recent_members = [
         {
             "record_id": d["_meta"]["record_id"],
             "name": f"{d['data'].get('firstName', '')} {d['data'].get('lastName', '')}".strip() or "Unknown",
-            "plan": d['data'].get('plan', 'N/A'),
-            "created_at": d['_meta']['created']['at']
+            "plan": d["data"].get("plan", "N/A"),
+            "created_at": d["_meta"]["created"]["at"],
         }
         for d in recent_docs
     ]
 
-    return {
-        "success": True,
-        "data": {
+    return ok(
+        message="Dashboard stats retrieved.",
+        data={
             "kpis": {
                 "total_members": total,
                 "active_members": active,
                 "attention_members": attention,
                 "frozen_members": frozen,
                 "members_added_this_month": added_this_month,
-                "revenue_mrr": 45200, # Placeholder until billing module is active
-                "checkins_today": 186, # Placeholder until check-in module is active
-                "trainer_utilization": 81 # Placeholder until trainer module is active
+                "revenue_mrr": 45200,           # Placeholder until billing module
+                "checkins_today": 186,           # Placeholder until check-in module
+                "trainer_utilization": 81,       # Placeholder until trainer module
             },
-            "recent_members": recent_members
-        }
-    }
+            "recent_members": recent_members,
+        },
+    )
 
+
+# ── CREATE ───────────────────────────────────────────────────────────
 
 @router.post("/addMember")
 async def add_member(
@@ -110,6 +126,7 @@ async def add_member(
     """
     Register a new gym member.
 
+    - Duplicate check on email / phone (org-scoped, strict match)
     - Data sanitized (XSS, injection prevention)
     - org_id, app_id, created_by injected from JWT + headers
     - record_id auto-generated by OrgRepository
@@ -117,28 +134,48 @@ async def add_member(
     raw = await request.json()
     data = sanitize_payload(raw)
 
-    # member_id is a separate continuous sequence for this entity
+    # ── Duplicate prevention ─────────────────────────────────────────
+    repo = OrgRepository(db, "records", ctx)
+
+    duplicate_filters = []
+    if data.get("email"):
+        duplicate_filters.append({"data.email": data["email"]})
+    if data.get("phone"):
+        duplicate_filters.append({"data.phone": data["phone"]})
+
+    if duplicate_filters:
+        existing = await repo.find_one({
+            **MEMBER_QUERY,
+            "$or": duplicate_filters,
+        })
+        if existing:
+            conflict(
+                message="A member with this email or phone already exists.",
+                error_code="DUPLICATE_MEMBER",
+                details={
+                    "existing_member_id": existing["data"].get("member_id"),
+                    "existing_record_id": existing["_meta"]["record_id"],
+                },
+            )
+
+    # ── Sequence + Insert ────────────────────────────────────────────
     seq = OrgSequenceService(db, ctx)
     member_id = await seq.simple("member", prefix="M")
     data["member_id"] = member_id
 
-    # Insert — record_id is auto-generated inside insert_one
-    repo = OrgRepository(db, "records", ctx)
     document = await repo.insert_one(
         data=data,
-        entity_type="member",
+        entity_type=ENTITY_TYPE,
         prefix=ctx.app_code.upper(),
     )
 
-    return {
-        "success": True,
-        "message": "Membership registration successful!",
-        "result": {
+    return created(
+        message="Membership registration successful!",
+        data={
             "record_id": document["_meta"]["record_id"],
             "member_id": member_id,
-            "_id": document["_id"],
         },
-    }
+    )
 
 
 # ── READ (list) ─────────────────────────────────────────────────────
@@ -157,23 +194,21 @@ async def get_members(
     """
     repo = OrgRepository(db, "records", ctx)
 
-    query = {"_meta.entity_type": "member"}
-
     documents = await repo.find(
-        query,
+        MEMBER_QUERY,
         sort=[("_meta.created.at", -1)],
         skip=skip,
         limit=limit,
     )
-    total = await repo.count(query)
+    total = await repo.count(MEMBER_QUERY)
 
-    return {
-        "success": True,
-        "data": documents,
-        "total": total,
-        "skip": skip,
-        "limit": limit,
-    }
+    return paginated(
+        message="Members retrieved.",
+        data=documents,
+        total=total,
+        skip=skip,
+        limit=limit,
+    )
 
 
 # ── READ (single) ───────────────────────────────────────────────────
@@ -189,9 +224,9 @@ async def get_member(
     doc = await repo.find_one(_record_query(identifier))
 
     if not doc:
-        raise HTTPException(status_code=404, detail="Member not found")
+        not_found(message=f"Member '{identifier}' not found.")
 
-    return {"success": True, "data": doc}
+    return ok(message="Member retrieved.", data=doc)
 
 
 # ── UPDATE ───────────────────────────────────────────────────────────
@@ -213,19 +248,15 @@ async def update_member(
     update_data = sanitize_payload(raw)
 
     if not update_data:
-        raise HTTPException(status_code=400, detail="No fields to update")
+        bad_request(message="No fields provided to update.")
 
     repo = OrgRepository(db, "records", ctx)
     doc = await repo.update_one(_record_query(identifier), update_data)
 
     if not doc:
-        raise HTTPException(status_code=404, detail="Member not found")
+        not_found(message=f"Member '{identifier}' not found.")
 
-    return {
-        "success": True,
-        "message": "Record updated successfully",
-        "data": doc,
-    }
+    return ok(message="Member updated successfully.", data=doc)
 
 
 # ── DELETE (soft) ────────────────────────────────────────────────────
@@ -243,12 +274,9 @@ async def delete_member(
     normal queries but can be retrieved with include_deleted=True.
     """
     repo = OrgRepository(db, "records", ctx)
-    deleted = await repo.soft_delete(_record_query(identifier))
+    result = await repo.soft_delete(_record_query(identifier))
 
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Member not found")
+    if not result:
+        not_found(message=f"Member '{identifier}' not found.")
 
-    return {
-        "success": True,
-        "message": "Record deleted successfully",
-    }
+    return deleted(message="Member deleted successfully.")

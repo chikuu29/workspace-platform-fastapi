@@ -128,13 +128,21 @@ async def api_error_handler(request: Request, exc: ApiError):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    """Handle standard FastAPI HTTPException errors."""
+    """Handle standard FastAPI HTTPException errors.
+
+    If detail is already a structured dict (from app.common.responses helpers),
+    pass it through directly. Otherwise wrap the plain string in error_payload.
+    """
     del request
-    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=error_payload(message=detail),
-    )
+
+    if isinstance(exc.detail, dict):
+        # Structured error — already has { success, message, details }
+        content = exc.detail
+    else:
+        # Legacy plain-string detail — wrap in standard shape
+        content = error_payload(message=str(exc.detail))
+
+    return JSONResponse(status_code=exc.status_code, content=content)
 
 
 @app.exception_handler(Exception)
