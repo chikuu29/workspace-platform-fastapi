@@ -19,4 +19,5 @@ dependencies = [
     "uvicorn>=0.42.0",
     "gunicorn>=23.0.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
+    "python-dateutil>=2.9.0",
 ]

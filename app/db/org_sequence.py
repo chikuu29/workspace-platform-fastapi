@@ -7,10 +7,30 @@ Uses MongoDB atomic `$inc` to guarantee uniqueness even under concurrency.
 The key difference from the old sequence.py: org_id and app_id are
 automatically pulled from OrgContext — callers never pass them manually.
 
+ID Format Design (multi-tenant + multi-app safe):
+──────────────────────────────────────────────────
+    monthly()  → {PREFIX}-{ENTITY_TAG}-{YYYYMM}-{NNNN}
+                  e.g. MYGYM-MBR-202605-0001
+                       MYGYM-PLN-202605-0001
+                       MYGYM-SUB-202605-0001
+
+    The PREFIX is the app-code (scoped per tenant + app).
+    The ENTITY_TAG is an abbreviated entity type that ensures
+    uniqueness ACROSS entity types within the same app.
+    The YYYYMM resets the counter monthly.
+    The NNNN is a zero-padded sequence counter.
+
+    This guarantees:
+     1. No collisions between entity types (member vs plan vs subscription)
+     2. No collisions between orgs (org_id is part of the counter key)
+     3. No collisions between apps (app_code is part of the counter key)
+     4. Human-readable: you can identify entity type from the ID itself
+
 Usage:
     seq = OrgSequenceService(db, ctx)
-    record_id = await seq.monthly("addMember", prefix="GYM")   # GYM-202604-0001
-    member_id = await seq.simple("member", prefix="M")          # M-1
+    record_id = await seq.monthly("member", prefix="MYGYM")      # MYGYM-MBR-202605-0001
+    record_id = await seq.monthly("subscription_plan", prefix="MYGYM")  # MYGYM-PLN-202605-0001
+    member_id = await seq.simple("member", prefix="M")            # M-1
 """
 
 from __future__ import annotations
@@ -23,12 +43,41 @@ from pymongo import ReturnDocument
 from app.core.context import OrgContext
 
 
+# ── Entity Tag Map ────────────────────────────────────────────────────────
+# Maps entity_type strings to short 3-letter tags for use in record IDs.
+# Add new entity types here as the platform grows.
+# If an entity type is NOT in this map, the first 3 chars (uppercased)
+# are used as a fallback — still unique enough for most cases.
+
+ENTITY_TAG_MAP: dict[str, str] = {
+    "member": "MBR",
+    "subscription_plan": "PLN",
+    "subscription": "SUB",
+    "invoice": "INV",
+    "payment": "PAY",
+    "checkin": "CHK",
+    "trainer": "TRN",
+    "class": "CLS",
+    "appointment": "APT",
+}
+
+
+def _entity_tag(entity_type: str) -> str:
+    """Derive a short tag for embedding in record IDs.
+
+    Looks up the explicit map first; falls back to the first 3 chars
+    uppercased for unknown entity types — keeps the system open for
+    extension without requiring map updates for every new module.
+    """
+    return ENTITY_TAG_MAP.get(entity_type, entity_type[:3].upper())
+
+
 class OrgSequenceService:
     """
     Atomic sequence generator scoped to the current org + app.
 
-    All counter keys are namespaced by org_id:app_id to prevent
-    cross-org sequence collisions.
+    All counter keys are namespaced by org_name:app_code to prevent
+    cross-org and cross-app sequence collisions.
     """
 
     COLLECTION = "sequences"
@@ -43,13 +92,14 @@ class OrgSequenceService:
 
     async def monthly(self, form_id: str, *, prefix: str = "REC") -> str:
         """
-        Generate a monthly-reset sequence ID.
+        Generate a monthly-reset sequence ID with entity-type tag.
 
-        Format: PREFIX-YYYYMM-0001
-        Example: GYM-202604-0001
+        Format: PREFIX-TAG-YYYYMM-0001
+        Example: MYGYM-MBR-202605-0001
 
         The counter resets each month automatically because the month
-        is part of the counter key.
+        is part of the counter key. The entity tag ensures uniqueness
+        across different record types within the same org + app.
         """
         current_month = datetime.now(timezone.utc).strftime("%Y%m")
         counter_id = f"{self._ctx.org_name}:{self._ctx.app_code}:{form_id}:{current_month}"
@@ -60,8 +110,9 @@ class OrgSequenceService:
             upsert=True,
             return_document=ReturnDocument.AFTER,
         )
-        # return f"{self._ctx.org_name}_{self._ctx.app_name}_{current_month}-{doc['seq']:04d}"
-        return f"{prefix}-{current_month}-{doc['seq']:04d}"
+
+        tag = _entity_tag(form_id)
+        return f"{prefix}-{tag}-{current_month}-{doc['seq']:04d}"
 
     async def simple(self, entity_type: str, *, prefix: str = "ID") -> str:
         """
