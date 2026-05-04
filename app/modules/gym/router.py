@@ -43,16 +43,15 @@ ENTITY_PLAN = "subscription_plan"
 ENTITY_SUBSCRIPTION = "subscription"
 """Canonical entity type for active member ↔ plan subscription records."""
 
+ENTITY_ATTENDANCE = "attendance"
+"""Canonical entity type for member check-in records."""
+
 # ── Base Filters ─────────────────────────────────────────────────────
 
 MEMBER_QUERY = {"_meta.entity_type": ENTITY_MEMBER}
-"""Base filter that scopes all queries to member documents only."""
-
 PLAN_QUERY = {"_meta.entity_type": ENTITY_PLAN}
-"""Base filter that scopes all queries to subscription plan documents."""
-
 SUBSCRIPTION_QUERY = {"_meta.entity_type": ENTITY_SUBSCRIPTION}
-"""Base filter that scopes all queries to subscription documents."""
+ATTENDANCE_QUERY = {"_meta.entity_type": ENTITY_ATTENDANCE}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -232,6 +231,83 @@ async def add_member(
 
 # ── READ (list) ─────────────────────────────────────────────────────
 
+
+async def _enrich_member(member: dict, repo: OrgRepository) -> dict:
+    """Attach subscription summary and compute dynamic status.
+
+    Status is derived from subscription state — never stored statically:
+    - **active**: Has an active, paid subscription with time remaining
+    - **attention**: Subscription exists but is unpaid or expires within 7 days
+    - **frozen**: No active subscription, or subscription has expired
+    """
+    member_id = member["data"].get("member_id")
+    if not member_id:
+        member["subscription"] = None
+        member["has_plan"] = False
+        member["data"]["status"] = "frozen"
+        return member
+
+    sub_doc = await repo.find_one({
+        **SUBSCRIPTION_QUERY,
+        "data.member_id": member_id,
+        "data.status": "active",
+    })
+
+    if sub_doc:
+        sub = sub_doc["data"]
+        member["subscription"] = {
+            "subscription_id": sub.get("subscription_id"),
+            "plan_name": sub.get("plan_name"),
+            "plan_code": sub.get("plan_code"),
+            "price": sub.get("price", 0),
+            "currency": sub.get("currency", "USD"),
+            "billing_cycle": sub.get("billing_cycle"),
+            "start_date": sub.get("start_date"),
+            "end_date": sub.get("end_date"),
+            "status": sub.get("status"),
+            "is_paid": sub.get("is_paid", False),
+        }
+        member["has_plan"] = True
+
+        # ── Dynamic status calculation ───────────────────────────
+        now = datetime.now(timezone.utc)
+        end_date_str = sub.get("end_date")
+        is_paid = sub.get("is_paid", False)
+
+        if end_date_str:
+            try:
+                end_date = datetime.fromisoformat(end_date_str)
+                # Make timezone-aware if naive
+                if end_date.tzinfo is None:
+                    end_date = end_date.replace(tzinfo=timezone.utc)
+
+                days_remaining = (end_date - now).days
+
+                if days_remaining < 0:
+                    # Subscription expired
+                    member["data"]["status"] = "frozen"
+                elif not is_paid:
+                    # Active but unpaid — needs follow-up
+                    member["data"]["status"] = "attention"
+                elif days_remaining <= 7:
+                    # Expiring within 7 days — renewal reminder
+                    member["data"]["status"] = "attention"
+                else:
+                    member["data"]["status"] = "active"
+            except (ValueError, TypeError):
+                # Bad date format — flag for review
+                member["data"]["status"] = "attention"
+        else:
+            # No end date recorded
+            member["data"]["status"] = "attention" if not is_paid else "active"
+    else:
+        member["subscription"] = None
+        member["has_plan"] = False
+        member["data"]["status"] = "frozen"
+
+    return member
+
+
 @router.get("/members")
 async def get_members(
     skip: int = Query(0, ge=0),
@@ -240,9 +316,11 @@ async def get_members(
     db=Depends(get_database),
 ):
     """
-    List gym members for the current organization.
+    List gym members with subscription summaries.
 
-    Automatically scoped — Org A never sees Org B's members.
+    Each member document is enriched with:
+    - `subscription`: active subscription details (or null)
+    - `has_plan`: boolean flag for frontend card highlighting
     """
     repo = OrgRepository(db, "records", ctx)
 
@@ -254,9 +332,12 @@ async def get_members(
     )
     total = await repo.count(MEMBER_QUERY)
 
+    # Enrich each member with subscription data
+    enriched = [await _enrich_member(doc, repo) for doc in documents]
+
     return paginated(
         message="Members retrieved.",
-        data=documents,
+        data=enriched,
         total=total,
         skip=skip,
         limit=limit,
@@ -271,12 +352,59 @@ async def get_member(
     ctx: OrgContext = Depends(get_org_context),
     db=Depends(get_database),
 ):
-    """Retrieve a single member by record_id, member_id, or ObjectId."""
+    """Retrieve a single member with full subscription + plan details.
+
+    Returns the member document enriched with:
+    - `subscription`: active subscription record (or null)
+    - `plan_details`: full plan document (or null)
+    - `has_plan`: boolean flag
+    - `subscription_history`: list of all past subscriptions
+    """
     repo = OrgRepository(db, "records", ctx)
     doc = await repo.find_one(_record_query(identifier))
 
     if not doc:
         not_found(message=f"Member '{identifier}' not found.")
+
+    # Enrich with subscription summary
+    doc = await _enrich_member(doc, repo)
+
+    # For single-member view, also attach full plan details + history
+    member_id = doc["data"].get("member_id")
+    if member_id and doc.get("subscription"):
+        plan_code = doc["subscription"].get("plan_code")
+        if plan_code:
+            plan_doc = await repo.find_one({
+                **PLAN_QUERY,
+                "data.code": plan_code,
+            })
+            doc["plan_details"] = plan_doc["data"] if plan_doc else None
+        else:
+            doc["plan_details"] = None
+    else:
+        doc["plan_details"] = None
+
+    # Subscription history (all subscriptions, not just active)
+    if member_id:
+        all_subs = await repo.find(
+            {**SUBSCRIPTION_QUERY, "data.member_id": member_id},
+            sort=[("_meta.created.at", -1)],
+            limit=20,
+        )
+        doc["subscription_history"] = [
+            {
+                "subscription_id": s["data"].get("subscription_id"),
+                "plan_name": s["data"].get("plan_name"),
+                "status": s["data"].get("status"),
+                "start_date": s["data"].get("start_date"),
+                "end_date": s["data"].get("end_date"),
+                "price": s["data"].get("price", 0),
+                "is_paid": s["data"].get("is_paid", False),
+            }
+            for s in all_subs
+        ]
+    else:
+        doc["subscription_history"] = []
 
     return ok(message="Member retrieved.", data=doc)
 
@@ -710,3 +838,105 @@ async def get_subscription_stats(
             "plans_with_members": plans_with_members,
         },
     )
+# ══════════════════════════════════════════════════════════════════════
+#  ATTENDANCE & CHECK-IN
+# ══════════════════════════════════════════════════════════════════════
+
+@router.post("/checkin")
+async def member_checkin(
+    data: dict,
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """
+    Record a member check-in.
+    Payload: { "member_id": "M-11" }
+    """
+    repo = OrgRepository(db, "records", ctx)
+    member_id = data.get("member_id")
+
+    if not member_id:
+        bad_request(message="member_id is required.")
+
+    # 1. Verify member exists
+    member_doc = await repo.find_one({**MEMBER_QUERY, "data.member_id": member_id})
+    if not member_doc:
+        not_found(message=f"Member {member_id} not found.")
+
+    # 2. Verify active subscription (optional but recommended)
+    sub = await repo.find_one({
+        **SUBSCRIPTION_QUERY,
+        "data.member_id": member_id,
+        "data.status": "active"
+    })
+
+    # 3. Create attendance record
+    now = datetime.now(timezone.utc)
+    checkin_data = {
+        "member_id": member_id,
+        "member_name": f"{member_doc['data'].get('firstName', '')} {member_doc['data'].get('lastName', '')}".strip(),
+        "timestamp": now.isoformat(),
+        "date": now.strftime("%Y-%m-%d"),
+        "hour": now.hour,
+        "subscription_id": sub["data"]["subscription_id"] if sub else None,
+        "has_active_plan": bool(sub)
+    }
+
+    doc = await repo.insert_one(
+        data=checkin_data,
+        entity_type=ENTITY_ATTENDANCE,
+        prefix=ctx.app_code.upper()
+    )
+
+    return created(message="Check-in successful!", data=doc)
+
+
+@router.get("/attendance/stats")
+async def get_attendance_stats(
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """
+    Get attendance analytics: daily visits, hourly heatmap, and active vs slipping members.
+    """
+    repo = OrgRepository(db, "records", ctx)
+    now = datetime.now(timezone.utc)
+
+    # 1. Visits last 7 days
+    dates = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+    daily_visits = []
+    for d in reversed(dates):
+        count = await repo.count({**ATTENDANCE_QUERY, "data.date": d})
+        daily_visits.append({"date": d, "count": count})
+
+    # 2. Hourly Heatmap (last 30 days)
+    # Simple aggregation loop since we don't have complex mongo pipeline tool ready
+    hourly_dist = {h: 0 for h in range(24)}
+    checkins = await repo.find(ATTENDANCE_QUERY, limit=1000)
+    for c in checkins:
+        h = c["data"].get("hour")
+        if h is not None:
+            hourly_dist[h] += 1
+
+    heatmap = [{"hour": h, "count": count} for h, count in hourly_dist.items()]
+
+    # 3. Active Members (checked in last 7 days)
+    seven_days_ago = (now - timedelta(days=7)).isoformat()
+    active_member_ids = await db["records"].distinct(
+        "data.member_id",
+        {
+            **ATTENDANCE_QUERY,
+            "_org.org_id": ctx.org_id,
+            "data.timestamp": {"$gte": seven_days_ago}
+        }
+    )
+
+    total_members = await repo.count(MEMBER_QUERY)
+
+    return ok(data={
+        "daily_visits": daily_visits,
+        "hourly_heatmap": heatmap,
+        "active_last_7_days": len(active_member_ids),
+        "total_members": total_members,
+        "slipping_members": max(0, total_members - len(active_member_ids))
+    })
