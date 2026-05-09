@@ -12,7 +12,7 @@ Response contract (via app.common.responses):
     Error   → { "success": False, "message": "...", "error_code": "..." }
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dateutil.relativedelta import relativedelta
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -43,6 +43,9 @@ ENTITY_PLAN = "subscription_plan"
 ENTITY_SUBSCRIPTION = "subscription"
 """Canonical entity type for active member ↔ plan subscription records."""
 
+ENTITY_TRAINER = "trainer"
+"""Canonical entity type for gym trainer/staff records."""
+
 ENTITY_ATTENDANCE = "attendance"
 """Canonical entity type for member check-in records."""
 
@@ -52,6 +55,7 @@ MEMBER_QUERY = {"_meta.entity_type": ENTITY_MEMBER}
 PLAN_QUERY = {"_meta.entity_type": ENTITY_PLAN}
 SUBSCRIPTION_QUERY = {"_meta.entity_type": ENTITY_SUBSCRIPTION}
 ATTENDANCE_QUERY = {"_meta.entity_type": ENTITY_ATTENDANCE}
+TRAINER_QUERY = {"_meta.entity_type": ENTITY_TRAINER}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -103,8 +107,8 @@ def _calculate_end_date(start_date: str, billing_cycle: str) -> str:
 #  DASHBOARD STATS
 # ══════════════════════════════════════════════════════════════════════
 
-@router.get("/dashboard/stats")
-async def get_dashboard_stats(
+@router.get("/analytics/kpis")
+async def get_gym_kpis(
     ctx: OrgContext = Depends(get_org_context),
     db=Depends(get_database),
 ):
@@ -146,8 +150,31 @@ async def get_dashboard_stats(
         for d in recent_docs
     ]
 
+    # ── Real-time Analytics ──────────────────────────────────────────
+    
+    # 1. Revenue MRR: Sum of prices from active subscriptions
+    revenue_pipeline = [
+        {"$match": {**ctx.active_filter, **SUBSCRIPTION_QUERY, "data.status": "active"}},
+        {"$group": {"_id": None, "total": {"$sum": "$data.price"}}}
+    ]
+    revenue_cursor = repo.collection.aggregate(revenue_pipeline)
+    revenue_result = await revenue_cursor.to_list(length=1)
+    revenue_mrr = revenue_result[0]["total"] if revenue_result else 0
+
+    # 2. Check-ins Today: Records from attendance collection for the current UTC day
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    checkins_today = await repo.count({
+        **ATTENDANCE_QUERY,
+        "_meta.created.at": {"$gte": today_start},
+    })
+
+    # 3. Trainer Utilization: Percentage of trainers currently active
+    total_trainers = await repo.count(TRAINER_QUERY)
+    active_trainers = await repo.count({**TRAINER_QUERY, "data.status": "active"})
+    trainer_utilization = round((active_trainers / total_trainers * 100)) if total_trainers > 0 else 0
+
     return ok(
-        message="Dashboard stats retrieved.",
+        message="Dashboard statistics retrieved.",
         data={
             "kpis": {
                 "total_members": total,
@@ -155,9 +182,10 @@ async def get_dashboard_stats(
                 "attention_members": attention,
                 "frozen_members": frozen,
                 "members_added_this_month": added_this_month,
-                "revenue_mrr": 45200,           # Placeholder until billing module
-                "checkins_today": 186,           # Placeholder until check-in module
-                "trainer_utilization": 81,       # Placeholder until trainer module
+                "total_trainers": total_trainers,
+                "revenue_mrr": revenue_mrr,
+                "checkins_today": checkins_today,
+                "trainer_utilization": trainer_utilization,
             },
             "recent_members": recent_members,
         },
@@ -260,7 +288,7 @@ async def _enrich_member(member: dict, repo: OrgRepository) -> dict:
             "plan_name": sub.get("plan_name"),
             "plan_code": sub.get("plan_code"),
             "price": sub.get("price", 0),
-            "currency": sub.get("currency", "USD"),
+            "currency": sub.get("currency", "INR"),
             "billing_cycle": sub.get("billing_cycle"),
             "start_date": sub.get("start_date"),
             "end_date": sub.get("end_date"),
@@ -504,7 +532,7 @@ async def create_plan(
         )
 
     # ── Defaults ─────────────────────────────────────────────────────
-    data.setdefault("currency", "USD")
+    data.setdefault("currency", "INR")
     data.setdefault("billing_cycle", "monthly")
     data.setdefault("is_active", True)
     data.setdefault("features", [])
@@ -714,7 +742,7 @@ async def activate_subscription(
         "plan_name": plan_data.get("name", ""),
         "plan_record_id": plan_doc["_meta"]["record_id"],
         "price": plan_data.get("price", 0),
-        "currency": plan_data.get("currency", "USD"),
+        "currency": plan_data.get("currency", "INR"),
         "billing_cycle": billing_cycle,
         "start_date": start_date,
         "end_date": end_date,
@@ -763,8 +791,8 @@ async def activate_subscription(
 #  SUBSCRIPTION STATS
 # ══════════════════════════════════════════════════════════════════════
 
-@router.get("/subscription/stats")
-async def get_subscription_stats(
+@router.get("/analytics/subscriptions")
+async def get_subscription_analytics(
     ctx: OrgContext = Depends(get_org_context),
     db=Depends(get_database),
 ):
@@ -838,6 +866,156 @@ async def get_subscription_stats(
             "plans_with_members": plans_with_members,
         },
     )
+
+
+# ── Trainer Helpers ───────────────────────────────────────────────────
+
+def _trainer_query(identifier: str) -> dict:
+    """Build a flexible lookup query for trainers by record_id, trainer_id, or ObjectId."""
+    query = {
+        "$or": [
+            {"_meta.record_id": identifier},
+            {"data.trainer_id": identifier},
+        ]
+    }
+    if ObjectId.is_valid(identifier):
+        query["$or"].append({"_id": ObjectId(identifier)})
+    return query
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  TRAINER MANAGEMENT
+# ══════════════════════════════════════════════════════════════════════
+
+@router.post("/addTrainer")
+async def add_trainer(
+    request: Request,
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """
+    Register a new gym trainer/staff member.
+
+    - Duplicate check on email/phone
+    - Auto-generates trainer_id (prefix TR)
+    - Fully audited record creation
+    """
+    raw = await request.json()
+    data = sanitize_payload(raw)
+
+    repo = OrgRepository(db, "records", ctx)
+
+    # ── Duplicate check ──────────────────────────────────────────────
+    dup_filters = []
+    if data.get("email"):
+        dup_filters.append({"data.email": data["email"]})
+    if data.get("phone"):
+        dup_filters.append({"data.phone": data["phone"]})
+
+    if dup_filters:
+        existing = await repo.find_one({**TRAINER_QUERY, "$or": dup_filters})
+        if existing:
+            conflict(
+                message="A trainer with this email or phone already exists.",
+                error_code="DUPLICATE_TRAINER",
+            )
+
+    # ── Sequence + Insert ────────────────────────────────────────────
+    seq = OrgSequenceService(db, ctx)
+    trainer_id = await seq.simple("trainer", prefix="TR")
+    data["trainer_id"] = trainer_id
+
+    document = await repo.insert_one(
+        data=data,
+        entity_type=ENTITY_TRAINER,
+        prefix=ctx.app_code.upper(),
+    )
+
+    return created(
+        message="Trainer registration successful!",
+        data={
+            "record_id": document["_meta"]["record_id"],
+            "trainer_id": trainer_id,
+        },
+    )
+
+
+@router.get("/trainers")
+async def get_trainers(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, le=100),
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """List all trainers in the organization."""
+    repo = OrgRepository(db, "records", ctx)
+    docs = await repo.find(
+        TRAINER_QUERY,
+        sort=[("_meta.created.at", -1)],
+        skip=skip,
+        limit=limit,
+    )
+    total = await repo.count(TRAINER_QUERY)
+
+    return paginated(
+        message="Trainers retrieved.",
+        data=docs,
+        total=total,
+        skip=skip,
+        limit=limit,
+    )
+
+
+@router.get("/trainers/{identifier}")
+async def get_trainer(
+    identifier: str,
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """Retrieve details of a specific trainer."""
+    repo = OrgRepository(db, "records", ctx)
+    doc = await repo.find_one(_trainer_query(identifier))
+    if not doc:
+        not_found(message=f"Trainer '{identifier}' not found.")
+    return ok(message="Trainer retrieved.", data=doc)
+
+
+@router.put("/trainers/{identifier}")
+async def update_trainer(
+    identifier: str,
+    request: Request,
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """Update trainer data."""
+    raw = await request.json()
+    update_data = sanitize_payload(raw)
+
+    if not update_data:
+        bad_request(message="No fields provided to update.")
+
+    repo = OrgRepository(db, "records", ctx)
+    doc = await repo.update_one(_trainer_query(identifier), update_data)
+    if not doc:
+        not_found(message=f"Trainer '{identifier}' not found.")
+
+    return ok(message="Trainer updated successfully.", data=doc)
+
+
+@router.delete("/trainers/{identifier}")
+async def delete_trainer(
+    identifier: str,
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """Soft-delete a trainer."""
+    repo = OrgRepository(db, "records", ctx)
+    result = await repo.soft_delete(_trainer_query(identifier))
+    if not result:
+        not_found(message=f"Trainer '{identifier}' not found.")
+    return deleted(message="Trainer deleted successfully.")
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  ATTENDANCE & CHECK-IN
 # ══════════════════════════════════════════════════════════════════════
@@ -891,8 +1069,8 @@ async def member_checkin(
     return created(message="Check-in successful!", data=doc)
 
 
-@router.get("/attendance/stats")
-async def get_attendance_stats(
+@router.get("/analytics/attendance")
+async def get_attendance_analytics(
     ctx: OrgContext = Depends(get_org_context),
     db=Depends(get_database),
 ):
