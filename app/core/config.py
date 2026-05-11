@@ -34,7 +34,10 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost", "http://localhost:3000"],
         validation_alias=AliasChoices("BACKEND_CORS_ORIGINS", "CORS_ORIGINS"),
     )
-    STORAGE_ROOT: Path = Path("storage")
+    # Keep static files anchored to the backend app directory. A relative
+    # "storage" path depends on the shell cwd used to launch uvicorn, which
+    # can make uploaded files exist on disk but 404 from /public/storage.
+    STORAGE_ROOT: Path = BASE_DIR / "storage"
     FILE_UPLOAD_URL: str = "/public/storage"
     APP_NAME: str = "Workspace API"
     ENV: str = Field(default="development", validation_alias=AliasChoices("ENV", "NODE_ENV"))
