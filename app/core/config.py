@@ -22,19 +22,22 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Workspace Platform API"
     VERSION: str = "1.0.0"
     # WHY "/v1" not "/api/v1":
-    # root_path="/api" in main.py already contributes the /api segment to
-    # Swagger's generated URLs.  If this were "/api/v1", every route would
-    # appear as /api/api/v1/... in Swagger and all proxy rewrites would break.
-    # Actual request path chain:
-    #   PROD: nginx strips /api  → pod receives /v1/route  ✅
-    #   DEV:  vite strips /backend → pod receives /v1/route ✅
+    # Vite proxy strips /backend and nginx strips /api before requests hit
+    # uvicorn, so the app only sees /v1/... as the path prefix.
     API_V1_STR: str = "/v1"
+    # ASGI root_path — used by Swagger/OpenAPI to generate correct URLs.
+    # DEV:  leave empty (Vite strips /backend, so no root_path needed).
+    # PROD: set ROOT_PATH="/backend" via env when the proxy preserves the prefix.
+    ROOT_PATH: str = ""
     PORT: int = 8001
     BACKEND_CORS_ORIGINS: Annotated[List[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost", "http://localhost:3000"],
         validation_alias=AliasChoices("BACKEND_CORS_ORIGINS", "CORS_ORIGINS"),
     )
-    STORAGE_ROOT: Path = Path("storage")
+    # Keep static files anchored to the backend app directory. A relative
+    # "storage" path depends on the shell cwd used to launch uvicorn, which
+    # can make uploaded files exist on disk but 404 from /public/storage.
+    STORAGE_ROOT: Path = BASE_DIR / "storage"
     FILE_UPLOAD_URL: str = "/public/storage"
     APP_NAME: str = "Workspace API"
     ENV: str = Field(default="development", validation_alias=AliasChoices("ENV", "NODE_ENV"))

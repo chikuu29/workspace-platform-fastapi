@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 
+from app.core.context import OrgContext, get_org_context
+from app.core.errors import ApiError
 from app.core.security.authentications import get_authenticated_identity
 from app.core.responses import success_response
 from app.modules.system.service import AppService
@@ -46,6 +48,44 @@ async def get_template(
     if template:
         return success_response(payload={"result": template})
     return success_response(payload={"success": False, "result": {}}, message="Success")
+
+
+@router.post("/upload")
+async def upload_file(
+    files: list[UploadFile] = File(...),
+    process_name: str = Form(default="files"),
+    accept: str | None = Form(default=None),
+    max_size_bytes: int = Form(default=25 * 1024 * 1024),
+    max_files: int = Form(default=10),
+    proxyUrl: str | None = Form(default=None),
+    ctx: OrgContext = Depends(get_org_context),
+    service: AppService = Depends(get_app_service),
+):
+    """
+    Upload files for config-driven uploadField widgets.
+
+    The frontend posts files under the `files` multipart key and may include
+    widget config values (`process_name`, `accept`, `max_size_bytes`, `max_files`).
+    The service streams each file to disk in chunks, so uploads do not require
+    loading the full file content into memory.
+    """
+    if not files:
+        raise ApiError(400, "No files uploaded.")
+
+    file_details = await service.upload_files(
+        files=files,
+        ctx=ctx,
+        process_name=process_name,
+        accept=accept,
+        max_size_bytes=max_size_bytes,
+        max_files=max_files,
+        extra_meta={"proxyUrl": proxyUrl} if proxyUrl else None,
+    )
+
+    return success_response(
+        payload={"uploadFiles": file_details},
+        message="Files uploaded successfully.",
+    )
 
 
 # @router.get("/getNotification")
