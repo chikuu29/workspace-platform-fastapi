@@ -3,8 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.encoders import jsonable_encoder
 
 from app.api.v1.api_router import api_router
@@ -38,15 +37,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    # root_path MUST match the prefix that the upstream proxy (nginx/Vite) strips.
-    # With root_path="/backend":
-    #   - Swagger schema is fetched at /backend/openapi.json   → /backend proxy handles it ✅
-    #   - Swagger "Try it out" calls  /backend/v1/getuser      → /backend proxy handles it ✅
-    #   - No /api alias needed in nginx ingress or Vite proxy
-    #
-    # If root_path were "/api" but the proxy prefix is "/backend", Swagger would
-    # generate /api/v1/... URLs which no proxy rule handles → 404 on every Try-it-out.
-    root_path="/backend",
+    # root_path is required for Swagger/OpenAPI to generate correct URLs
+    # through the reverse-proxy (Vite strips /backend, nginx strips /api).
+    # NOTE: root_path breaks StaticFiles mounts in Starlette ≥ 0.50, so
+    # uploaded files are served via a regular FileResponse route instead.
+    root_path=settings.ROOT_PATH,
     lifespan=lifespan,
 )
 
@@ -60,12 +55,25 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_headers=["*"],
     )
 
+
+# ── Public Storage (uploaded files) ────────────────────────────────────────
+# We serve uploaded files via a regular route instead of StaticFiles mount
+# because root_path shifts ASGI scope["path"] in Starlette ≥ 0.50, which
+# silently 404s every StaticFiles mount.  A @app.get route goes through
+# FastAPI's router and is immune to the root_path path-shift.
 settings.STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
-app.mount(
-    "/public/storage",
-    StaticFiles(directory=str(settings.STORAGE_ROOT), check_dir=False),
-    name="public-storage",
-)
+
+
+@app.get("/public/storage/{file_path:path}", include_in_schema=False)
+async def serve_storage_file(file_path: str):
+    """Serve uploaded files from the storage directory."""
+    # Resolve and ensure the path stays within STORAGE_ROOT (prevent traversal)
+    resolved = (settings.STORAGE_ROOT / file_path).resolve()
+    if not resolved.is_relative_to(settings.STORAGE_ROOT.resolve()):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(resolved)
 
 
 # ── Exception Handlers ────────────────────────────────────────────────────────
