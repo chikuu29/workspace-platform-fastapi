@@ -81,6 +81,7 @@ async def get_hostel_kpis(
     # 2. Counts
     total_tenants = await repo.count(TENANT_QUERY)
     open_complaints = await repo.count({**COMPLAINT_QUERY, "data.status": {"$ne": "Resolved"}})
+    total_buildings = await repo.count(BUILDING_QUERY)
 
     # 3. Dues calculation: Sum of unpaid/partially paid invoices
     unpaid_pipeline = [
@@ -117,6 +118,7 @@ async def get_hostel_kpis(
                 "active_tenants": total_tenants,
                 "total_dues": total_dues,
                 "open_complaints": open_complaints,
+                "total_buildings": total_buildings,
             },
             "recent_tenants": recent_tenants,
         }
