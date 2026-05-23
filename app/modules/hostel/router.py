@@ -249,6 +249,7 @@ async def add_room(
     # Prevent duplicate room numbers within this organization
     existing = await repo.find_one({
         **ROOM_QUERY,
+        "data.buildingName": data["buildingName"],
         "data.roomNumber": data["roomNumber"]
     })
     if existing:
@@ -272,6 +273,61 @@ async def add_room(
     return created(
         message="Hostel room added successfully.",
         data=document,
+    )
+
+
+@router.get("/rooms/options")
+async def get_rooms_options(
+    buildingName: Optional[str] = Query(None),
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """Get room options filtered by building block, showing only available rooms."""
+    repo = OrgRepository(db, "records", ctx)
+    
+    query = {**ROOM_QUERY}
+    if buildingName:
+        query["data.buildingName"] = buildingName
+
+    documents = await repo.find(
+        query,
+        sort=[("data.roomNumber", 1)],
+    )
+
+    options = []
+    floor_labels = {
+        "0": "Ground Floor",
+        "1": "1st Floor",
+        "2": "2nd Floor",
+        "3": "3rd Floor",
+        "4": "4th Floor",
+        "5": "5th Floor",
+    }
+    
+    for doc in documents:
+        cap = int(doc["data"].get("capacity") or 2)
+        occupants = doc["data"].get("occupants") or []
+        count = len(occupants)
+        
+        # Only show rooms that have at least one vacant bed
+        if count < cap:
+            room_number = doc["data"].get("roomNumber", "Unnamed Room")
+            floor_val = doc["data"].get("floorNumber")
+            floor_lbl = floor_labels.get(str(floor_val)) if floor_val is not None else None
+            
+            if floor_lbl:
+                label = f"{room_number} ({floor_lbl} - {count}/{cap} occupied)"
+            else:
+                label = f"{room_number} ({count}/{cap} occupied)"
+                
+            options.append({
+                "id": room_number,
+                "name": label
+            })
+
+    return ok(
+        message="Available room options retrieved successfully.",
+        data=options,
     )
 
 
