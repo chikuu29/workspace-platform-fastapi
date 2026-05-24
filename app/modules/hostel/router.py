@@ -331,6 +331,44 @@ async def get_rooms_options(
     )
 
 
+@router.get("/rooms/security-deposit")
+async def get_room_security_deposit(
+    buildingName: str = Query(...),
+    roomNumber: str = Query(...),
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """Calculate and return the security deposit for a specific room in a specific building."""
+    repo = OrgRepository(db, "records", ctx)
+    room = await repo.find_one({
+        **ROOM_QUERY,
+        "data.buildingName": buildingName,
+        "data.roomNumber": roomNumber
+    })
+    if not room:
+        return ok(
+            message="Room not found.",
+            data={"securityDeposit": 0}
+        )
+
+    rent_amount = float(room["data"].get("rentAmount") or 0.0)
+    capacity = int(room["data"].get("capacity") or 1)
+
+    # Calculate security deposit: (rentAmount / capacity) * 2
+    security_deposit = 0
+    if rent_amount > 0 and capacity > 0:
+        security_deposit = int((rent_amount / capacity) * 2)
+
+    return ok(
+        message="Security deposit calculated successfully.",
+        data={
+            "securityDeposit": security_deposit,
+            "rentAmount": rent_amount,
+            "securityDepositNote": f"Calculated as (rentAmount / capacity) * 2 Months = ({rent_amount} / {capacity}) * 2"
+        }
+    )
+
+
 @router.get("/rooms")
 async def get_rooms(
     skip: int = Query(0, ge=0),
