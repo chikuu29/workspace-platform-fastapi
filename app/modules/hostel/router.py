@@ -1,8 +1,26 @@
 """
 Hostel Module Router — Isolated multi-tenant operations for room management,
-tenant boarding, utility bill splits, invoicing, and complaint tickets.
+guest onboarding, utility bill splits, invoicing, and complaint tickets.
 
 All endpoints utilize OrgContext for secure multi-tenant data isolation.
+
+── Relational Schema Overview ──
+1. Building (hostel_building)
+   - Unique key: name (e.g. "Block A")
+2. Room (hostel_room)
+   - Unique key: roomNumber (e.g. "101")
+   - Foreign key: buildingName -> hostel_building.name
+   - Embedded relation: occupants (list of guest references: guest_id, name, phone)
+3. Guest (hostel_guest) [Formerly Tenant]
+   - Unique key: guest_id (e.g. "G-1") [Maps to legacy tenant_id for backward compatibility]
+   - Foreign key: room_number -> hostel_room.roomNumber
+   - Foreign key: buildingName -> hostel_building.name
+4. Invoice (hostel_invoice)
+   - Foreign key: guest_id -> hostel_guest.guest_id
+   - Foreign key: room_number -> hostel_room.roomNumber
+5. Complaint (hostel_complaint)
+   - Foreign key: guest_id -> hostel_guest.guest_id
+   - Foreign key: room_number -> hostel_room.roomNumber
 """
 
 from datetime import datetime, timezone, timedelta
@@ -25,24 +43,26 @@ router = APIRouter(
 # ── Entity Constants ─────────────────────────────────────────────────
 ENTITY_BUILDING = "hostel_building"
 ENTITY_ROOM = "hostel_room"
-ENTITY_TENANT = "hostel_tenant"
+ENTITY_GUEST = "hostel_guest"
+ENTITY_TENANT = "hostel_guest"  # Compatibility alias pointing to hostel_guest
 ENTITY_INVOICE = "hostel_invoice"
 ENTITY_COMPLAINT = "hostel_complaint"
 
 # ── Base Filters ─────────────────────────────────────────────────────
 BUILDING_QUERY = {"_meta.entity_type": ENTITY_BUILDING}
 ROOM_QUERY = {"_meta.entity_type": ENTITY_ROOM}
-TENANT_QUERY = {"_meta.entity_type": ENTITY_TENANT}
+GUEST_QUERY = {"_meta.entity_type": ENTITY_GUEST}
+TENANT_QUERY = GUEST_QUERY  # Compatibility alias
 INVOICE_QUERY = {"_meta.entity_type": ENTITY_INVOICE}
 COMPLAINT_QUERY = {"_meta.entity_type": ENTITY_COMPLAINT}
 
 
 def _record_query(identifier: str) -> dict:
-    """Build a flexible lookup query by record_id, or ObjectId."""
+    """Build a flexible lookup query by record_id, guest_id/tenant_id, or ObjectId."""
     query = {
         "$or": [
             {"_meta.record_id": identifier},
-            {"data.tenant_id": identifier},
+            {"data.guest_id": identifier},
             {"data.room_number": identifier},
         ]
     }
@@ -62,43 +82,62 @@ async def get_hostel_kpis(
 ):
     """
     Aggregate hostel dashboard KPIs in a single backend call.
-    Computes room occupancy, active tenants count, outstanding dues, and open complaints.
+    Uses high-performance MongoDB aggregation to avoid loading large datasets in memory.
     """
     repo = OrgRepository(db, "records", ctx)
 
-    # 1. Rooms and Occupancy Aggregation
-    rooms = await repo.find(ROOM_QUERY)
-    total_beds = 0
-    occupied_beds = 0
-    for room in rooms:
-        capacity = int(room["data"].get("capacity") or 1)
-        occupants = len(room["data"].get("occupants") or [])
-        total_beds += capacity
-        occupied_beds += occupants
+    # 1. Memory-Efficient Rooms and Occupancy Aggregation
+    room_pipeline = [
+        {"$match": {**ctx.active_filter, **ROOM_QUERY}},
+        {"$project": {
+            "capacity": {"$toInt": {"$ifNull": ["$data.capacity", 1]}},
+            "occupants_count": {
+                "$cond": {
+                    "if": {"$isArray": "$data.occupants"},
+                    "then": {"$size": "$data.occupants"},
+                    "else": 0
+                }
+            }
+        }},
+        {"$group": {
+            "_id": None,
+            "total_beds": {"$sum": "$capacity"},
+            "occupied_beds": {"$sum": "$occupants_count"}
+        }}
+    ]
+    room_cursor = repo.collection.aggregate(room_pipeline)
+    room_result = await room_cursor.to_list(length=1)
+    
+    if room_result:
+        total_beds = room_result[0]["total_beds"]
+        occupied_beds = room_result[0]["occupied_beds"]
+    else:
+        total_beds = 0
+        occupied_beds = 0
 
     occupancy_rate = round((occupied_beds / total_beds * 100), 1) if total_beds > 0 else 0.0
 
-    # 2. Counts
-    total_tenants = await repo.count(TENANT_QUERY)
+    # 2. Counts (Efficient O(1) indexes usage)
+    total_guests = await repo.count(GUEST_QUERY)
     open_complaints = await repo.count({**COMPLAINT_QUERY, "data.status": {"$ne": "Resolved"}})
     total_buildings = await repo.count(BUILDING_QUERY)
 
-    # 3. Dues calculation: Sum of unpaid/partially paid invoices
+    # 3. Dues calculation: Sum of unpaid/partially paid invoices (Memory-Efficient Aggregation)
     unpaid_pipeline = [
         {"$match": {**ctx.active_filter, **INVOICE_QUERY, "data.status": {"$in": ["Unpaid", "Partially Paid"]}}},
-        {"$group": {"_id": None, "total": {"$sum": "$data.amount_due"}}}
+        {"$group": {"_id": None, "total": {"$sum": {"$toDouble": {"$ifNull": ["$data.amount_due", 0.0]}}}}}
     ]
     unpaid_cursor = repo.collection.aggregate(unpaid_pipeline)
     unpaid_result = await unpaid_cursor.to_list(length=1)
     total_dues = unpaid_result[0]["total"] if unpaid_result else 0.0
 
-    # 4. Recent tenants list
+    # 4. Recent guests list
     recent_docs = await repo.find(
-        TENANT_QUERY,
+        GUEST_QUERY,
         sort=[("_meta.created.at", -1)],
         limit=5,
     )
-    recent_tenants = [
+    recent_guests = [
         {
             "record_id": d["_meta"]["record_id"],
             "name": f"{d['data'].get('firstName', '')} {d['data'].get('lastName', '')}".strip(),
@@ -115,12 +154,12 @@ async def get_hostel_kpis(
                 "total_beds": total_beds,
                 "occupied_beds": occupied_beds,
                 "occupancy_rate": f"{occupancy_rate}%",
-                "active_tenants": total_tenants,
+                "active_tenants": total_guests,
                 "total_dues": total_dues,
                 "open_complaints": open_complaints,
                 "total_buildings": total_buildings,
             },
-            "recent_tenants": recent_tenants,
+            "recent_tenants": recent_guests,
         }
     )
 
@@ -201,7 +240,7 @@ async def get_buildings_options(
     ctx: OrgContext = Depends(get_org_context),
     db=Depends(get_database),
 ):
-    """Get flat building options for SelectField dropdowns."""
+    """Get flat building options for SelectField dropdowns, returning record_id as key."""
     repo = OrgRepository(db, "records", ctx)
     documents = await repo.find(
         BUILDING_QUERY,
@@ -214,7 +253,7 @@ async def get_buildings_options(
         loc = doc["data"].get("location", "")
         label = f"{name} ({loc})" if loc else name
         options.append({
-            "id": name,  # Submitted field value matches current room scheme
+            "id": doc["_meta"]["record_id"],  # SSOT building record identifier
             "name": label
         })
 
@@ -235,28 +274,49 @@ async def add_room(
     db=Depends(get_database),
 ):
     """
-    Add a new hostel room.
-    Ensures the room number is unique within the organization scope.
+    Add a new hostel room under a validated building block.
+    Establishes a Single Source of Truth relation (building_id + cached buildingName).
     """
     raw = await request.json()
     data = sanitize_payload(raw)
 
+    building_id = data.get("building_id") or data.get("buildingName")
+    if not building_id:
+        bad_request(message="buildingName or building_id is required.")
     if not data.get("roomNumber"):
         bad_request(message="roomNumber is required.")
 
     repo = OrgRepository(db, "records", ctx)
 
-    # Prevent duplicate room numbers within this organization
+    # 1. Verify building exists in the organization scope (SSOT lookup)
+    building_doc = await repo.find_one({
+        **BUILDING_QUERY,
+        "$or": [
+            {"_meta.record_id": building_id},
+            {"data.name": building_id}
+        ]
+    })
+    if not building_doc:
+        not_found(message=f"Building block '{building_id}' not found.")
+
+    b_id = building_doc["_meta"]["record_id"]
+    b_name = building_doc["data"].get("name", "Unnamed Building")
+
+    # 2. Prevent duplicate room numbers within this building block
     existing = await repo.find_one({
         **ROOM_QUERY,
-        "data.buildingName": data["buildingName"],
-        "data.roomNumber": data["roomNumber"]
+        "data.building_id": b_id,
+        "data.roomNumber": data.get("roomNumber")
     })
     if existing:
         conflict(
-            message=f"Room '{data['roomNumber']}' already exists.",
+            message=f"Room '{data.get('roomNumber')}' already exists in building '{b_name}'.",
             error_code="DUPLICATE_ROOM",
         )
+
+    # 3. Store normalized keys
+    data["building_id"] = b_id
+    data["buildingName"] = b_name  # Cached fallback name for list pages
 
     # Initialize roommates occupants list
     data.setdefault("occupants", [])
@@ -282,12 +342,15 @@ async def get_rooms_options(
     ctx: OrgContext = Depends(get_org_context),
     db=Depends(get_database),
 ):
-    """Get room options filtered by building block, showing only available rooms."""
+    """Get room options filtered by building block (accepts buildingName or building_id), showing only available rooms."""
     repo = OrgRepository(db, "records", ctx)
     
     query = {**ROOM_QUERY}
     if buildingName:
-        query["data.buildingName"] = buildingName
+        query["$or"] = [
+            {"data.building_id": buildingName},
+            {"data.buildingName": buildingName}
+        ]
 
     documents = await repo.find(
         query,
@@ -338,11 +401,14 @@ async def get_room_security_deposit(
     ctx: OrgContext = Depends(get_org_context),
     db=Depends(get_database),
 ):
-    """Calculate and return the security deposit for a specific room in a specific building."""
+    """Calculate and return the security deposit for a specific room in a specific building block."""
     repo = OrgRepository(db, "records", ctx)
     room = await repo.find_one({
         **ROOM_QUERY,
-        "data.buildingName": buildingName,
+        "$or": [
+            {"data.building_id": buildingName},
+            {"data.buildingName": buildingName}
+        ],
         "data.roomNumber": roomNumber
     })
     if not room:
@@ -407,17 +473,17 @@ async def get_rooms(
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  TENANT CRUD
+#  GUEST CRUD
 # ══════════════════════════════════════════════════════════════════════
 
-@router.post("/addTenant")
-async def add_tenant(
+@router.post("/addGuest")
+async def add_guest(
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
     db=Depends(get_database),
 ):
     """
-    Board a new tenant and allocate them to a room if specified.
+    Board a new guest and allocate them to a room if specified.
     Increments occupants list inside room configuration.
     """
     raw = await request.json()
@@ -447,27 +513,28 @@ async def add_tenant(
                 error_code="ROOM_FULL",
             )
 
-    # 2. Sequence generated Tenant ID
+    # 2. Sequence generated Guest ID
     seq = OrgSequenceService(db, ctx)
-    tenant_id = await seq.simple("tenant", prefix="T")
-    data["tenant_id"] = tenant_id
+    guest_id = await seq.simple("guest", prefix="G")
+    data["guest_id"] = guest_id
+    data["tenant_id"] = guest_id  # Compatibility fallback
     data.setdefault("status", "Active")
     data.setdefault("rent_status", "Paid")
 
-    # 3. Create Tenant
-    tenant_doc = await repo.insert_one(
+    # 3. Create Guest
+    guest_doc = await repo.insert_one(
         data=data,
-        entity_type=ENTITY_TENANT,
-        prefix="TNT",
+        entity_type=ENTITY_GUEST,
+        prefix="GST",
     )
 
     # 4. Add occupant to Room list in MongoDB records
     if room_doc:
         occupants_list = list(room_doc["data"].get("occupants") or [])
         occupants_list.append({
-            "tenant_id": tenant_id,
-            "name": f"{data['firstName']} {data['lastName']}".strip(),
-            "phone": data.get("phone", "")
+            "guest_id": guest_id,
+            "tenant_id": guest_id,  # Compatibility
+            "record_id": guest_doc["_meta"]["record_id"]
         })
 
         room_update = {"occupants": occupants_list}
@@ -484,45 +551,61 @@ async def add_tenant(
         )
 
     return created(
-        message="Tenant onboarded and allocated successfully.",
-        data=tenant_doc,
+        message="Guest onboarded and allocated successfully.",
+        data=guest_doc,
     )
 
 
-@router.get("/tenants")
-async def get_tenants(
+
+
+@router.get("/guests")
+async def get_guests(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=100),
     ctx: OrgContext = Depends(get_org_context),
     db=Depends(get_database),
 ):
-    """Retrieve isolated list of tenants."""
+    """Retrieve isolated list of guests."""
     repo = OrgRepository(db, "records", ctx)
     documents = await repo.find(
-        TENANT_QUERY,
+        GUEST_QUERY,
         sort=[("_meta.created.at", -1)],
         skip=skip,
         limit=limit,
     )
-    total = await repo.count(TENANT_QUERY)
+    total = await repo.count(GUEST_QUERY)
 
     # Dynamically verify if they have pending dues to update rent_status
     for doc in documents:
-        tenant_id = doc["data"].get("tenant_id")
+        guest_id = doc["data"].get("guest_id") or doc["data"].get("tenant_id")
         unpaid = await repo.count({
             **INVOICE_QUERY,
-            "data.tenant_id": tenant_id,
+            "$or": [
+                {"data.guest_id": guest_id},
+                {"data.tenant_id": guest_id}
+            ],
             "data.status": {"$in": ["Unpaid", "Partially Paid"]}
         })
         doc["data"]["rent_status"] = "Overdue" if unpaid > 0 else "Paid"
 
     return paginated(
-        message="Tenants retrieved successfully.",
+        message="Guests retrieved successfully.",
         data=documents,
         total=total,
         skip=skip,
         limit=limit,
     )
+
+
+@router.get("/tenants")
+async def get_tenants_legacy(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, le=100),
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """Legacy endpoint mapping to get_guests."""
+    return await get_guests(skip, limit, ctx, db)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -536,40 +619,34 @@ async def generate_invoice(
     db=Depends(get_database),
 ):
     """
-    Generate an invoice for a tenant.
+    Generate an invoice for a guest.
     Supports dynamic split-billing for utility metrics among all occupants currently allocated to a room.
-
-    Expected payload:
-    {
-        "tenant_id": "T-1",
-        "description": "May Rent + Utilities",
-        "is_utility_split": true,
-        "utility_total_amount": 3000.0,   # Total utility bill (water/electricity) for the entire room
-        "utility_type": "Electricity"
-    }
     """
     raw = await request.json()
     data = sanitize_payload(raw)
 
-    tenant_id = data.get("tenant_id")
-    if not tenant_id:
-        bad_request(message="tenant_id is required.")
+    guest_id = data.get("guest_id") or data.get("tenant_id")
+    if not guest_id:
+        bad_request(message="guest_id is required.")
 
     repo = OrgRepository(db, "records", ctx)
 
-    # 1. Load tenant information
-    tenant_doc = await repo.find_one({
-        **TENANT_QUERY,
-        "data.tenant_id": tenant_id
+    # 1. Load guest information (safe compatibility lookup)
+    guest_doc = await repo.find_one({
+        **GUEST_QUERY,
+        "$or": [
+            {"data.guest_id": guest_id},
+            {"data.tenant_id": guest_id}
+        ]
     })
-    if not tenant_doc:
-        not_found(message=f"Tenant '{tenant_id}' not found.")
+    if not guest_doc:
+        not_found(message=f"Guest '{guest_id}' not found.")
 
-    tenant_name = f"{tenant_doc['data'].get('firstName', '')} {tenant_doc['data'].get('lastName', '')}".strip()
-    room_number = tenant_doc["data"].get("room_number")
+    guest_name = f"{guest_doc['data'].get('firstName', '')} {guest_doc['data'].get('lastName', '')}".strip()
+    room_number = guest_doc["data"].get("room_number")
 
     if not room_number:
-        bad_request(message=f"Tenant '{tenant_id}' is not currently allocated to any room.")
+        bad_request(message=f"Guest '{guest_id}' is not currently allocated to any room.")
 
     # 2. Get Room details for rent amount & occupants list
     room_doc = await repo.find_one({
@@ -581,7 +658,7 @@ async def generate_invoice(
 
     base_rent = float(room_doc["data"].get("rentAmount") or 5000.0)
 
-    # 3. Dynamic Utility Bill Splitting among current room roommates
+    # 3. Dynamic Utility Bill Splitting among current roommates
     utility_split_charge = 0.0
     utility_log_notes = ""
 
@@ -597,7 +674,7 @@ async def generate_invoice(
             )
         else:
             utility_split_charge = float(data["utility_total_amount"])
-            utility_log_notes = "Room is occupied solely by this tenant. Full utility charge applied."
+            utility_log_notes = "Room is occupied solely by this guest. Full utility charge applied."
 
     total_invoice_amount = base_rent + utility_split_charge
 
@@ -607,8 +684,10 @@ async def generate_invoice(
 
     invoice_data = {
         "invoice_id": invoice_id,
-        "tenant_id": tenant_id,
-        "tenant_name": tenant_name,
+        "guest_id": guest_id,
+        "tenant_id": guest_id,      # Compatibility fallback
+        "guest_name": guest_name,
+        "tenant_name": guest_name,  # Compatibility fallback
         "room_number": room_number,
         "base_rent": base_rent,
         "utility_charge": utility_split_charge,
@@ -627,7 +706,7 @@ async def generate_invoice(
     )
 
     return created(
-        message="Tenant invoice generated successfully.",
+        message="Guest invoice generated successfully.",
         data=invoice_doc,
     )
 
