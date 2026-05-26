@@ -59,6 +59,16 @@ ENTITY_TAG_MAP: dict[str, str] = {
     "trainer": "TRN",
     "class": "CLS",
     "appointment": "APT",
+    # ── Billing module entity tags ────────────────────────────────────
+    "billing_catalog": "CAT",
+    "billing_invoice": "INV",
+    "billing_payment": "PAY",
+    "billing_subscription": "BSB",
+    "billing_credit_note": "CRN",
+    "billing_tax_profile": "TAX",
+    "billing_reminder": "RMD",
+    "billing_gateway_config": "GWY",
+    "billing_settlement": "STL",
 }
 
 

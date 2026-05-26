@@ -119,3 +119,69 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
 
     logger.info("MongoDB indexes ensured for 'records' collection")
 
+    # ── Billing Collection Indexes ───────────────────────────────────────
+    # Separate collections for the centralized billing module.
+    # Each index is idempotent — safe to call on every startup.
+
+    # Invoices: overdue lookup, unique invoice numbers, customer history
+    await db["billing_invoices"].create_index(
+        [("_org.org_id", 1), ("data.status", 1), ("data.due_date", 1)],
+        name="idx_bill_inv_status_due", background=True,
+    )
+    await db["billing_invoices"].create_index(
+        [("_org.org_id", 1), ("data.invoice_number", 1)],
+        name="idx_bill_inv_number", unique=True, background=True,
+    )
+    await db["billing_invoices"].create_index(
+        [("_org.org_id", 1), ("data.customer_ref.ref_id", 1)],
+        name="idx_bill_inv_customer", background=True,
+    )
+
+    # Payments: invoice lookup, gateway tier filtering
+    await db["billing_payments"].create_index(
+        [("_org.org_id", 1), ("data.invoice_ref", 1)],
+        name="idx_bill_pay_invoice", background=True,
+    )
+    await db["billing_payments"].create_index(
+        [("_org.org_id", 1), ("data.gateway_tier", 1), ("data.status", 1)],
+        name="idx_bill_pay_tier_status", background=True,
+    )
+
+    # Subscriptions: renewal processing
+    await db["billing_subscriptions"].create_index(
+        [("_org.org_id", 1), ("data.status", 1), ("data.next_billing_date", 1)],
+        name="idx_bill_sub_renewal", background=True,
+    )
+
+    # Gateway configs: one active config per org+app
+    await db["billing_gateway_configs"].create_index(
+        [("_org.org_id", 1), ("_org.app_code", 1)],
+        name="idx_bill_gw_org_app", unique=True, background=True,
+    )
+
+    # Settlements: status lookup
+    await db["billing_settlements"].create_index(
+        [("_org.org_id", 1), ("data.status", 1)],
+        name="idx_bill_stl_status", background=True,
+    )
+
+    # Reminders: scheduled processing
+    await db["billing_reminders"].create_index(
+        [("data.status", 1), ("data.scheduled_date", 1)],
+        name="idx_bill_rem_scheduled", background=True,
+    )
+
+    # Catalog: unique code per org
+    await db["billing_catalog"].create_index(
+        [("_org.org_id", 1), ("data.code", 1)],
+        name="idx_bill_cat_code", unique=True, background=True,
+    )
+
+    # Tax profiles: GSTIN lookup
+    await db["billing_tax_profiles"].create_index(
+        [("_org.org_id", 1), ("data.gstin", 1)],
+        name="idx_bill_tax_gstin", unique=True, background=True,
+    )
+
+    logger.info("MongoDB indexes ensured for billing collections")
+

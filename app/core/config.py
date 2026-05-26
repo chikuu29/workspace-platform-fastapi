@@ -126,5 +126,23 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.ENV.lower() == "production"
 
+    # ── Billing — Platform Gateway ────────────────────────────────────
+    # Platform's own gateway credentials (Tier 2 payments)
+    PLATFORM_RAZORPAY_KEY_ID: str = ""
+    PLATFORM_RAZORPAY_KEY_SECRET: str = ""
+
+    # Encryption key for storing owner's gateway credentials in MongoDB
+    BILLING_ENCRYPTION_KEY: str = ""  # AES-256, base64 encoded
+
+    # ── Billing — Commission Defaults ─────────────────────────────────
+    PLATFORM_DEFAULT_COMMISSION_RATE: float = 5.0   # 5% default
+    PLATFORM_MIN_COMMISSION: float = 10.0           # ₹10 minimum
+
+    # ── Billing — General Defaults ────────────────────────────────────
+    BILLING_DEFAULT_CURRENCY: str = "INR"
+    BILLING_DEFAULT_TAX_RATE: float = 18.0
+    BILLING_PAYMENT_LINK_EXPIRY_HOURS: int = 72
+    BILLING_REMINDER_DAYS_BEFORE: int = 3
+
 
 settings = Settings()
