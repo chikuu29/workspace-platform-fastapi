@@ -25,7 +25,7 @@ from app.modules.billing_management.constants import (
     PaymentMethod,
     PaymentStatus,
 )
-from app.modules.billing_management.repositories.catalog_repo import (
+from app.modules.billing_management.repositories.billing_repos import (
     InvoiceRepository,
     PaymentRepository,
 )

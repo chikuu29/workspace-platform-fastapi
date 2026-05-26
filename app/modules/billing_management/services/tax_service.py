@@ -19,7 +19,7 @@ from app.modules.billing_management.engines.tax_engine import (
     compute_line_tax,
     compute_invoice_tax,
 )
-from app.modules.billing_management.repositories.catalog_repo import (
+from app.modules.billing_management.repositories.billing_repos import (
     TaxProfileRepository,
 )
 

@@ -8,7 +8,6 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.context import OrgContext
 from app.modules.billing_management.constants import (
-    COLL_CATALOG,
     COLL_CREDIT_NOTES,
     COLL_GATEWAY_CONFIGS,
     COLL_INVOICES,
@@ -17,7 +16,6 @@ from app.modules.billing_management.constants import (
     COLL_SETTLEMENTS,
     COLL_SUBSCRIPTIONS,
     COLL_TAX_PROFILES,
-    ENTITY_CATALOG,
     ENTITY_CREDIT_NOTE,
     ENTITY_GATEWAY_CONFIG,
     ENTITY_INVOICE,
@@ -32,43 +30,6 @@ from app.modules.billing_management.constants import (
 from app.modules.billing_management.repositories.billing_repository import (
     BillingRepository,
 )
-
-
-class CatalogRepository(BillingRepository):
-    """Repository for the billing_catalog collection."""
-
-    def __init__(self, db: AsyncIOMotorDatabase, ctx: OrgContext) -> None:
-        super().__init__(db, COLL_CATALOG, ctx)
-
-    async def find_by_code(self, code: str) -> Optional[Dict[str, Any]]:
-        """Find a catalog item by its unique code within the org."""
-        return await self.find_one({"data.code": code})
-
-    async def find_active(
-        self,
-        *,
-        item_type: Optional[str] = None,
-        app_tag: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 50,
-    ) -> List[Dict[str, Any]]:
-        """Find active catalog items with optional filters."""
-        query: Dict[str, Any] = {"data.is_active": True}
-        if item_type:
-            query["data.item_type"] = item_type
-        if app_tag:
-            # Items tagged for this app OR items with no tags (available to all)
-            query["$or"] = [
-                {"data.app_tags": app_tag},
-                {"data.app_tags": {"$size": 0}},
-                {"data.app_tags": {"$exists": False}},
-            ]
-        return await self.find(
-            query,
-            sort=[("data.name", 1)],
-            skip=skip,
-            limit=limit,
-        )
 
 
 class InvoiceRepository(BillingRepository):

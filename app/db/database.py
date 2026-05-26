@@ -171,11 +171,7 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
         name="idx_bill_rem_scheduled", background=True,
     )
 
-    # Catalog: unique code per org
-    await db["billing_catalog"].create_index(
-        [("_org.org_id", 1), ("data.code", 1)],
-        name="idx_bill_cat_code", unique=True, background=True,
-    )
+
 
     # Tax profiles: GSTIN lookup
     await db["billing_tax_profiles"].create_index(

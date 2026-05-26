@@ -60,7 +60,6 @@ ENTITY_TAG_MAP: dict[str, str] = {
     "class": "CLS",
     "appointment": "APT",
     # ── Billing module entity tags ────────────────────────────────────
-    "billing_catalog": "CAT",
     "billing_invoice": "INV",
     "billing_payment": "PAY",
     "billing_subscription": "BSB",
