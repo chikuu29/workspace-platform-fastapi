@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query
 
 from app.common.responses import created, ok, paginated
 from app.core.context import OrgContext, get_org_context
 from app.core.security.authentications import get_authenticated_identity
 from app.db.database import get_database
 from app.modules.billing_management.services.invoice_service import InvoiceService
+from app.modules.billing_management.schemas.common import SuccessEnvelope, PaginatedEnvelope
+from app.modules.billing_management.schemas.invoice_schemas import (
+    CreateInvoiceInput,
+    UpdateInvoiceInput,
+    InvoiceResponse,
+    InvoiceDetailResponse,
+    map_invoice_doc_to_response,
+)
+from app.modules.billing_management.schemas.payment_schemas import (
+    map_payment_doc_to_response,
+)
 
 router = APIRouter(dependencies=[Depends(get_authenticated_identity)])
 
@@ -20,9 +31,9 @@ def _get_service(
     return InvoiceService(db, ctx)
 
 
-@router.post("")
+@router.post("", response_model=SuccessEnvelope[InvoiceResponse], status_code=201)
 async def create_invoice(
-    request: Request,
+    input_data: CreateInvoiceInput,
     service: InvoiceService = Depends(_get_service),
 ):
     """
@@ -31,12 +42,12 @@ async def create_invoice(
     Pass seller_gstin and buyer_gstin in the request body.
     Line items are priced and taxed automatically.
     """
-    data = await request.json()
-    document = await service.create_invoice(data)
-    return created(message="Invoice created successfully.", data=document)
+    doc = await service.create_invoice(input_data)
+    mapped = map_invoice_doc_to_response(doc)
+    return created(message="Invoice created successfully.", data=mapped)
 
 
-@router.get("")
+@router.get("", response_model=PaginatedEnvelope[InvoiceResponse])
 async def list_invoices(
     status: str = Query(None, description="Filter by status: draft, sent, paid, partial, overdue, void"),
     customer_ref_id: str = Query(None, description="Filter by customer ref_id"),
@@ -53,46 +64,55 @@ async def list_invoices(
         skip=skip,
         limit=limit,
     )
-    return paginated(message="Invoices retrieved.", data=documents, total=total, skip=skip, limit=limit)
+    mapped = [map_invoice_doc_to_response(doc) for doc in documents]
+    return paginated(message="Invoices retrieved.", data=mapped, total=total, skip=skip, limit=limit)
 
 
-@router.get("/{invoice_number:path}")
+@router.get("/{invoice_number:path}", response_model=SuccessEnvelope[InvoiceDetailResponse])
 async def get_invoice(
     invoice_number: str,
     service: InvoiceService = Depends(_get_service),
 ):
     """Get a single invoice with payment history."""
-    document = await service.get_invoice(invoice_number)
-    return ok(message="Invoice retrieved.", data=document)
+    doc, payments = await service.get_invoice(invoice_number)
+    mapped_invoice = map_invoice_doc_to_response(doc)
+    mapped_payments = [map_payment_doc_to_response(p) for p in payments]
+    detail = InvoiceDetailResponse(
+        **mapped_invoice.model_dump(),
+        payment_history=mapped_payments,
+    )
+    return ok(message="Invoice retrieved.", data=detail)
 
 
-@router.put("/{invoice_number:path}")
+@router.put("/{invoice_number:path}", response_model=SuccessEnvelope[InvoiceResponse])
 async def update_invoice(
     invoice_number: str,
-    request: Request,
+    input_data: UpdateInvoiceInput,
     service: InvoiceService = Depends(_get_service),
 ):
     """Update a draft invoice."""
-    data = await request.json()
-    document = await service.update_invoice(invoice_number, data)
-    return ok(message="Invoice updated successfully.", data=document)
+    doc = await service.update_invoice(invoice_number, input_data)
+    mapped = map_invoice_doc_to_response(doc)
+    return ok(message="Invoice updated successfully.", data=mapped)
 
 
-@router.post("/{invoice_number:path}/send")
+@router.post("/{invoice_number:path}/send", response_model=SuccessEnvelope[InvoiceResponse])
 async def send_invoice(
     invoice_number: str,
     service: InvoiceService = Depends(_get_service),
 ):
     """Mark a draft invoice as sent."""
-    document = await service.send_invoice(invoice_number)
-    return ok(message="Invoice marked as sent.", data=document)
+    doc = await service.send_invoice(invoice_number)
+    mapped = map_invoice_doc_to_response(doc)
+    return ok(message="Invoice marked as sent.", data=mapped)
 
 
-@router.post("/{invoice_number:path}/void")
+@router.post("/{invoice_number:path}/void", response_model=SuccessEnvelope[InvoiceResponse])
 async def void_invoice(
     invoice_number: str,
     service: InvoiceService = Depends(_get_service),
 ):
     """Void/cancel an invoice."""
-    document = await service.void_invoice(invoice_number)
-    return ok(message="Invoice voided.", data=document)
+    doc = await service.void_invoice(invoice_number)
+    mapped = map_invoice_doc_to_response(doc)
+    return ok(message="Invoice voided.", data=mapped)

@@ -734,10 +734,76 @@ async def activate_subscription(
 
     end_date = _calculate_end_date(start_date, billing_cycle)
 
-    # ── 5. Build subscription record ─────────────────────────────────
+    # ── 5. Generate Billing Invoice ──────────────────────────────────
+    member_name = f"{member_doc['data'].get('firstName', '')} {member_doc['data'].get('lastName', '')}".strip()
+    seller_gstin = "29AABCU9603R1ZM"  # Default fallback
+    tax_profile = await db["billing_tax_profiles"].find_one({"_org.org_id": ctx.org_id})
+    if tax_profile:
+        seller_gstin = tax_profile.get("data", {}).get("gstin", seller_gstin)
+
+
+    
+
+    from app.modules.billing_management.services.invoice_service import InvoiceService
+    from app.modules.billing_management.schemas.invoice_schemas import CreateInvoiceInput
+    from app.modules.billing_management.schemas.line_items import ServiceLineItem
+    from app.modules.billing_management.schemas.common import CustomerRefSchema
+
+    billing_input = CreateInvoiceInput(
+        customer_ref=CustomerRefSchema(
+            ref_type="member",
+            ref_id=member_id,
+            name=member_name,
+            email=member_doc["data"].get("email", ""),
+            phone=member_doc["data"].get("phone", ""),
+        ),
+        line_items=[
+            ServiceLineItem(
+                item_type="service",
+                description=f"Gym Subscription: {plan_data.get('name')}",
+                quantity=1,
+                unit_price=plan_data.get("price", 0),
+                hsn_sac_code="997212",  # Gym/Fitness SAC code
+                tax_category="higher",  # 18% standard GST
+                source_item_code=plan_code,
+            )
+        ],
+        seller_gstin=seller_gstin,
+        place_of_supply=seller_gstin[:2],
+        due_date=end_date,
+        notes=data.get("notes", ""),
+    )
+
+    invoice_svc = InvoiceService(db, ctx)
+    invoice_doc = await invoice_svc.create_invoice(billing_input)
+
+    # ── 6. Handle Payment Recording ──────────────────────────────────
+    is_paid = data.get("is_paid", False)
+    payment_method = data.get("payment_method", "cash")
+    transaction_ref = data.get("transaction_ref", "")
+
+    if is_paid:
+        from app.modules.billing_management.services.payment_service import PaymentService
+        from app.modules.billing_management.schemas.payment_schemas import RecordPaymentInput
+
+        payment_svc = PaymentService(db, ctx)
+        payment_input = RecordPaymentInput(
+            invoice_ref=invoice_doc.invoice_number,
+            amount=invoice_doc.total,
+            method=payment_method,
+            transaction_ref=transaction_ref,
+            notes=f"Upfront subscription payment via {payment_method.upper()}",
+        )
+        await payment_svc.record_payment(payment_input)
+
+        # Reload updated invoice doc
+        invoice_doc_tuple = await invoice_svc.get_invoice(invoice_doc.invoice_number)
+        invoice_doc = invoice_doc_tuple[0]
+
+    # ── 7. Build subscription record ─────────────────────────────────
     subscription_data = {
         "member_id": member_id,
-        "member_name": f"{member_doc['data'].get('firstName', '')} {member_doc['data'].get('lastName', '')}".strip(),
+        "member_name": member_name,
         "plan_code": plan_code,
         "plan_name": plan_data.get("name", ""),
         "plan_record_id": plan_doc["_meta"]["record_id"],
@@ -747,8 +813,10 @@ async def activate_subscription(
         "start_date": start_date,
         "end_date": end_date,
         "status": "active",
-        "is_paid": data.get("is_paid", False),
-        "payment_amount": data.get("payment_amount", plan_data.get("price", 0)),
+        "is_paid": is_paid,
+        "payment_method": payment_method,
+        "payment_amount": invoice_doc.total,
+        "invoice_number": invoice_doc.invoice_number,
         "notes": data.get("notes", ""),
     }
 
@@ -762,7 +830,7 @@ async def activate_subscription(
         prefix=ctx.app_code.upper(),
     )
 
-    # ── 6. Update member with plan + status ──────────────────────────
+    # ── 8. Update member with plan + status ──────────────────────────
     member_update = {
         "plan": plan_data.get("name", plan_code),
         "plan_code": plan_code,
@@ -783,6 +851,12 @@ async def activate_subscription(
             "plan_name": plan_data.get("name"),
             "start_date": start_date,
             "end_date": end_date,
+            "invoice": {
+                "invoice_number": invoice_doc.invoice_number,
+                "total": invoice_doc.total,
+                "status": invoice_doc.status,
+                "balance_due": invoice_doc.balance_due,
+            },
         },
     )
 

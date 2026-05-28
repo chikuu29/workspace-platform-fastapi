@@ -12,6 +12,15 @@ Usage:
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
+# ── Beanie ODM & Motor Compatibility Patch ──────────────────────────────────
+# Beanie 2.1.0 attempts to append metadata via database.client.append_metadata.
+# In Motor, accessing undefined attributes dynamically returns a MotorDatabase,
+# which is callable (but raises TypeError upon invocation). Defining a dummy
+# method prevents Motor's collection/database lookup logic from triggering.
+AsyncIOMotorClient.append_metadata = lambda self, *args, **kwargs: None
+
+from beanie import init_beanie
+
 from app.core.config import settings
 from app.core.logger import create_logger
 
@@ -51,6 +60,16 @@ async def connect_to_mongo() -> None:
 
         # ── Create indexes for the unified records collection ────────
         await _ensure_indexes(_db)
+
+        # ── Initialize Beanie ODM ───────────────────────────────────────────
+        from app.modules.billing_management.documents.invoice_doc import InvoiceDoc
+        from app.modules.billing_management.documents.payment_doc import PaymentDoc
+
+        await init_beanie(
+            database=_db,
+            document_models=[InvoiceDoc, PaymentDoc]
+        )
+        logger.info("Beanie ODM initialized for billing models")
 
     except Exception as e:
         logger.error("MongoDB connection failed: %s", e)

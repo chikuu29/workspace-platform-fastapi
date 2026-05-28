@@ -27,16 +27,21 @@ from app.modules.billing_management.constants import (
 )
 from app.modules.billing_management.engines.pricing_engine import (
     compute_line_pricing,
-    compute_invoice_totals,
 )
 from app.modules.billing_management.engines.tax_engine import (
     compute_line_tax,
     compute_invoice_tax,
 )
-from app.modules.billing_management.models.base import TaxBreakdown
-from app.modules.billing_management.repositories.billing_repos import (
-    InvoiceRepository,
-    PaymentRepository,
+from app.modules.billing_management.documents.invoice_doc import (
+    InvoiceDoc,
+    CustomerRefEmbed,
+    TaxBreakdownEmbed,
+    LineItemEmbed,
+)
+from app.modules.billing_management.documents.payment_doc import PaymentDoc
+from app.modules.billing_management.schemas.invoice_schemas import (
+    CreateInvoiceInput,
+    UpdateInvoiceInput,
 )
 
 logger = create_logger("billing.invoice_service")
@@ -63,13 +68,11 @@ def _indian_financial_year() -> str:
 
 
 class InvoiceService:
-    """Business logic for the invoice lifecycle."""
+    """Business logic for the invoice lifecycle using Beanie."""
 
     def __init__(self, db: AsyncIOMotorDatabase, ctx: OrgContext) -> None:
         self._db = db
         self._ctx = ctx
-        self._invoice_repo = InvoiceRepository(db, ctx)
-        self._payment_repo = PaymentRepository(db, ctx)
 
     async def _generate_invoice_number(self) -> str:
         """
@@ -90,55 +93,27 @@ class InvoiceService:
         )
         return f"INV/{fy}/{doc['seq']:04d}"
 
-    async def create_invoice(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_invoice(self, input_data: CreateInvoiceInput) -> InvoiceDoc:
         """
         Create an invoice with full tax + pricing computation.
 
-        Expected payload:
-        {
-            "customer_ref": { "ref_type": "member", "ref_id": "M-1", "name": "John", ... },
-            "seller_gstin": "29AABCU9603R1ZM",
-            "buyer_gstin": "27AADCB2230M1Z3",      // optional (B2B)
-            "place_of_supply": "27",                 // state code
-            "line_items": [
-                {
-                    "catalog_item_code": "GYM_PRO",  // optional — can be freeform
-                    "description": "Pro Gym Plan",
-                    "quantity": 1,
-                    "unit_price": 5000,
-                    "tax_category": "higher",         // GST category
-                    "hsn_sac_code": "997212",
-                    "discount_type": "percentage",    // optional
-                    "discount_value": 10              // optional
-                }
-            ],
-            "due_date": "2026-06-15",
-            "notes": "First month free promo"
-        }
+        Price is TRUSTED — the calling app already verified it.
+        Billing computes: tax, discounts, totals, invoice number.
         """
-        # ── Validate required fields ──────────────────────────────────
-        customer_ref = data.get("customer_ref")
-        if not customer_ref or not customer_ref.get("ref_id"):
-            bad_request(message="customer_ref with ref_id is required.")
-
-        raw_items = data.get("line_items", [])
-        if not raw_items:
-            bad_request(message="At least one line_item is required.")
-
-        seller_gstin = data.get("seller_gstin", "")
-        buyer_gstin = data.get("buyer_gstin", "")
-        place_of_supply = data.get("place_of_supply", "")
-
         # ── Process each line item ────────────────────────────────────
-        computed_items: List[Dict[str, Any]] = []
+        computed_items: List[LineItemEmbed] = []
         line_tax_inputs: list[tuple[float, str]] = []
 
-        for item in raw_items:
-            qty = float(item.get("quantity", 1))
-            price = float(item.get("unit_price", 0))
-            disc_type = item.get("discount_type", "none")
-            disc_value = float(item.get("discount_value", 0))
-            tax_cat = item.get("tax_category", "higher")
+        seller_gstin = input_data.seller_gstin
+        buyer_gstin = input_data.buyer_gstin or ""
+        place_of_supply = input_data.place_of_supply or ""
+
+        for item in input_data.line_items:
+            qty = item.quantity
+            price = item.unit_price
+            disc_type = item.discount_type
+            disc_value = item.discount_value
+            tax_cat = item.tax_category
 
             # Pricing: qty × price − discount
             line_calc = compute_line_pricing(
@@ -146,7 +121,7 @@ class InvoiceService:
                 unit_price=price,
                 discount_type=disc_type,
                 discount_value=disc_value,
-                tax_amount=0.0,  # Will compute tax separately
+                tax_amount=0.0,
             )
 
             # Tax: GST on taxable amount
@@ -166,21 +141,34 @@ class InvoiceService:
                 tax_amount=line_tax.total_tax,
             )
 
-            computed_items.append({
-                "catalog_item_code": item.get("catalog_item_code", ""),
-                "description": item.get("description", ""),
-                "hsn_sac_code": item.get("hsn_sac_code", ""),
-                "quantity": qty,
-                "unit_price": price,
-                "discount_type": disc_type,
-                "discount_value": disc_value,
-                "discount_amount": final_calc.discount_amount,
-                "tax_category": tax_cat,
-                "tax_rate": line_tax.tax_rate,
-                "tax_amount": line_tax.total_tax,
-                "taxable_amount": final_calc.taxable_amount,
-                "line_total": final_calc.line_total,
-            })
+            item_dump = item.model_dump(exclude_unset=False)
+
+            computed_items.append(
+                LineItemEmbed(
+                    item_type=item.item_type,
+                    source_item_code=item.source_item_code or "",
+                    description=item.description,
+                    hsn_sac_code=item.hsn_sac_code or "",
+                    quantity=qty,
+                    unit_price=price,
+                    discount_type=disc_type,
+                    discount_value=disc_value,
+                    discount_amount=final_calc.discount_amount,
+                    tax_category=tax_cat,
+                    tax_rate=line_tax.tax_rate,
+                    tax_amount=line_tax.total_tax,
+                    taxable_amount=final_calc.taxable_amount,
+                    line_total=final_calc.line_total,
+                    unit_of_measurement=item_dump.get("unit_of_measurement"),
+                    service_date=item_dump.get("service_date"),
+                    service_period_start=item_dump.get("service_period_start"),
+                    service_period_end=item_dump.get("service_period_end"),
+                    plan_code=item_dump.get("plan_code"),
+                    billing_cycle=item_dump.get("billing_cycle"),
+                    period_start=item_dump.get("period_start"),
+                    period_end=item_dump.get("period_end"),
+                )
+            )
 
             line_tax_inputs.append((final_calc.taxable_amount, tax_cat))
 
@@ -191,49 +179,69 @@ class InvoiceService:
             place_of_supply=place_of_supply or buyer_gstin,
         )
 
-        subtotal = sum(li["taxable_amount"] for li in computed_items)
+        subtotal = sum(li.taxable_amount for li in computed_items)
         total = round(subtotal + agg_tax.total_tax, 2)
 
         # ── Generate invoice number ───────────────────────────────────
         invoice_number = await self._generate_invoice_number()
 
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        due_date_str = input_data.due_date if input_data.due_date else now_str
 
-        invoice_data: Dict[str, Any] = {
-            "invoice_number": invoice_number,
-            "invoice_type": data.get("invoice_type", "standard"),
-            "customer_ref": customer_ref,
-            "line_items": computed_items,
-            "subtotal": round(subtotal, 2),
-            "tax_breakdown": agg_tax.to_dict(),
-            "total": total,
-            "amount_paid": 0.0,
-            "balance_due": total,
-            "currency": data.get("currency", DEFAULT_CURRENCY),
-            "seller_gstin": seller_gstin,
-            "buyer_gstin": buyer_gstin,
-            "place_of_supply": place_of_supply,
-            "is_inter_state": agg_tax.is_inter_state,
-            "status": InvoiceStatus.DRAFT,
-            "issue_date": now_str,
-            "due_date": data.get("due_date", now_str),
-            "payment_terms": data.get("payment_terms", DEFAULT_PAYMENT_TERMS),
-            "source_app": self._ctx.app_code,
-            "notes": data.get("notes", ""),
-            "terms_and_conditions": data.get("terms_and_conditions", ""),
-        }
-
-        document = await self._invoice_repo.insert_one(
-            data=invoice_data,
+        # Build Beanie document
+        doc = InvoiceDoc.create_for_org(
+            self._ctx,
             entity_type=ENTITY_INVOICE,
-            prefix="INV",
+            record_id=invoice_number,
+            invoice_number=invoice_number,
+            invoice_type=input_data.invoice_type,
+            customer_ref=CustomerRefEmbed(
+                ref_type=input_data.customer_ref.ref_type,
+                ref_id=input_data.customer_ref.ref_id,
+                name=input_data.customer_ref.name,
+                email=input_data.customer_ref.email,
+                phone=input_data.customer_ref.phone,
+                gstin=input_data.customer_ref.gstin,
+            ),
+            line_items=computed_items,
+            subtotal=round(subtotal, 2),
+            tax_breakdown=TaxBreakdownEmbed(
+                tax_type=agg_tax.tax_type,
+                tax_rate=agg_tax.tax_rate,
+                taxable_amount=agg_tax.taxable_amount,
+                cgst_rate=agg_tax.cgst_rate,
+                cgst_amount=agg_tax.cgst_amount,
+                sgst_rate=agg_tax.sgst_rate,
+                sgst_amount=agg_tax.sgst_amount,
+                igst_rate=agg_tax.igst_rate,
+                igst_amount=agg_tax.igst_amount,
+                total_tax=agg_tax.total_tax,
+                is_inter_state=agg_tax.is_inter_state,
+            ),
+            total=total,
+            amount_paid=0.0,
+            balance_due=total,
+            currency=input_data.currency,
+            seller_gstin=seller_gstin,
+            buyer_gstin=buyer_gstin,
+            place_of_supply=place_of_supply,
+            is_inter_state=agg_tax.is_inter_state,
+            status=InvoiceStatus.DRAFT,
+            issue_date=now_str,
+            due_date=due_date_str,
+            payment_terms=input_data.payment_terms,
+            source_app=self._ctx.app_code,
+            notes=input_data.notes,
+            terms_and_conditions=input_data.terms_and_conditions,
         )
+
+        await doc.insert()
 
         logger.info(
             "Created invoice %s total=%.2f org=%s app=%s",
             invoice_number, total, self._ctx.org_id, self._ctx.app_code,
         )
-        return document
+        return doc
 
     async def list_invoices(
         self,
@@ -243,120 +251,213 @@ class InvoiceService:
         source_app: Optional[str] = None,
         skip: int = 0,
         limit: int = 50,
-    ) -> tuple[List[Dict[str, Any]], int]:
+    ) -> tuple[List[InvoiceDoc], int]:
         """List invoices with optional filters."""
         query: Dict[str, Any] = {}
         if status:
-            query["data.status"] = status
+            query["status"] = status
         if customer_ref_id:
-            query["data.customer_ref.ref_id"] = customer_ref_id
+            query["customer_ref.ref_id"] = customer_ref_id
         if source_app:
-            query["data.source_app"] = source_app
+            query["source_app"] = source_app
 
-        documents = await self._invoice_repo.find(
+        documents = await InvoiceDoc.org_find(
+            self._ctx,
             query,
             sort=[("_meta.created.at", -1)],
             skip=skip,
             limit=limit,
         )
-        total = await self._invoice_repo.count(query)
+        total = await InvoiceDoc.org_count(self._ctx, query)
         return documents, total
 
-    async def get_invoice(self, invoice_number: str) -> Dict[str, Any]:
+    async def get_invoice(self, invoice_number: str) -> tuple[InvoiceDoc, List[PaymentDoc]]:
         """Get a single invoice with payment history."""
-        doc = await self._invoice_repo.find_by_number(invoice_number)
+        doc = await InvoiceDoc.find_by_number(self._ctx, invoice_number)
         if not doc:
             not_found(message=f"Invoice '{invoice_number}' not found.")
 
-        # Attach payment history
-        payments = await self._payment_repo.find_by_invoice(invoice_number)
-        doc["payment_history"] = payments
-        return doc
+        payments = await PaymentDoc.find_by_invoice(self._ctx, invoice_number)
+        return doc, payments
 
     async def update_invoice(
-        self, invoice_number: str, update_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """
-        Update an invoice. Only draft invoices can be edited.
-
-        For status changes, use send_invoice() or void_invoice() instead.
-        """
-        doc = await self._invoice_repo.find_by_number(invoice_number)
+        self, invoice_number: str, input_data: UpdateInvoiceInput,
+    ) -> InvoiceDoc:
+        """Update a draft invoice. Only draft invoices can be edited."""
+        doc = await InvoiceDoc.find_by_number(self._ctx, invoice_number)
         if not doc:
             not_found(message=f"Invoice '{invoice_number}' not found.")
 
-        if doc["data"]["status"] != InvoiceStatus.DRAFT:
+        if doc.status != InvoiceStatus.DRAFT:
             bad_request(
                 message="Only draft invoices can be edited. "
-                        f"Current status: {doc['data']['status']}."
+                        f"Current status: {doc.status}."
             )
 
-        updated = await self._invoice_repo.update_one(
-            {"data.invoice_number": invoice_number},
-            update_data,
-        )
-        if not updated:
-            not_found(message=f"Invoice '{invoice_number}' not found.")
+        # Update fields if provided
+        if input_data.due_date is not None:
+            doc.due_date = input_data.due_date
+        if input_data.payment_terms is not None:
+            doc.payment_terms = input_data.payment_terms
+        if input_data.notes is not None:
+            doc.notes = input_data.notes
+        if input_data.terms_and_conditions is not None:
+            doc.terms_and_conditions = input_data.terms_and_conditions
 
+        if input_data.line_items is not None:
+            # Recompute line items
+            computed_items: List[LineItemEmbed] = []
+            line_tax_inputs: list[tuple[float, str]] = []
+
+            seller_gstin = doc.seller_gstin
+            buyer_gstin = doc.buyer_gstin
+            place_of_supply = doc.place_of_supply
+
+            for item in input_data.line_items:
+                qty = item.quantity
+                price = item.unit_price
+                disc_type = item.discount_type
+                disc_value = item.discount_value
+                tax_cat = item.tax_category
+
+                line_calc = compute_line_pricing(
+                    quantity=qty,
+                    unit_price=price,
+                    discount_type=disc_type,
+                    discount_value=disc_value,
+                    tax_amount=0.0,
+                )
+
+                line_tax = compute_line_tax(
+                    taxable_amount=line_calc.taxable_amount,
+                    tax_category=tax_cat,
+                    seller_gstin=seller_gstin,
+                    place_of_supply=place_of_supply or buyer_gstin,
+                )
+
+                final_calc = compute_line_pricing(
+                    quantity=qty,
+                    unit_price=price,
+                    discount_type=disc_type,
+                    discount_value=disc_value,
+                    tax_amount=line_tax.total_tax,
+                )
+
+                item_dump = item.model_dump(exclude_unset=False)
+
+                computed_items.append(
+                    LineItemEmbed(
+                        item_type=item.item_type,
+                        source_item_code=item.source_item_code or "",
+                        description=item.description,
+                        hsn_sac_code=item.hsn_sac_code or "",
+                        quantity=qty,
+                        unit_price=price,
+                        discount_type=disc_type,
+                        discount_value=disc_value,
+                        discount_amount=final_calc.discount_amount,
+                        tax_category=tax_cat,
+                        tax_rate=line_tax.tax_rate,
+                        tax_amount=line_tax.total_tax,
+                        taxable_amount=final_calc.taxable_amount,
+                        line_total=final_calc.line_total,
+                        unit_of_measurement=item_dump.get("unit_of_measurement"),
+                        service_date=item_dump.get("service_date"),
+                        service_period_start=item_dump.get("service_period_start"),
+                        service_period_end=item_dump.get("service_period_end"),
+                        plan_code=item_dump.get("plan_code"),
+                        billing_cycle=item_dump.get("billing_cycle"),
+                        period_start=item_dump.get("period_start"),
+                        period_end=item_dump.get("period_end"),
+                    )
+                )
+
+                line_tax_inputs.append((final_calc.taxable_amount, tax_cat))
+
+            agg_tax = compute_invoice_tax(
+                line_taxable_amounts=line_tax_inputs,
+                seller_gstin=seller_gstin,
+                place_of_supply=place_of_supply or buyer_gstin,
+            )
+
+            subtotal = sum(li.taxable_amount for li in computed_items)
+            total = round(subtotal + agg_tax.total_tax, 2)
+
+            doc.line_items = computed_items
+            doc.subtotal = round(subtotal, 2)
+            doc.tax_breakdown = TaxBreakdownEmbed(
+                tax_type=agg_tax.tax_type,
+                tax_rate=agg_tax.tax_rate,
+                taxable_amount=agg_tax.taxable_amount,
+                cgst_rate=agg_tax.cgst_rate,
+                cgst_amount=agg_tax.cgst_amount,
+                sgst_rate=agg_tax.sgst_rate,
+                sgst_amount=agg_tax.sgst_amount,
+                igst_rate=agg_tax.igst_rate,
+                igst_amount=agg_tax.igst_amount,
+                total_tax=agg_tax.total_tax,
+                is_inter_state=agg_tax.is_inter_state,
+            )
+            doc.total = total
+            doc.balance_due = round(total - doc.amount_paid, 2)
+            doc.is_inter_state = agg_tax.is_inter_state
+
+        await doc.org_save(self._ctx)
         logger.info("Updated invoice %s org=%s", invoice_number, self._ctx.org_id)
-        return updated
+        return doc
 
-    async def send_invoice(self, invoice_number: str) -> Dict[str, Any]:
+    async def send_invoice(self, invoice_number: str) -> InvoiceDoc:
         """Mark an invoice as sent (transitions draft → sent)."""
-        doc = await self._invoice_repo.find_by_number(invoice_number)
+        doc = await InvoiceDoc.find_by_number(self._ctx, invoice_number)
         if not doc:
             not_found(message=f"Invoice '{invoice_number}' not found.")
 
-        current_status = doc["data"]["status"]
+        current_status = doc.status
         if current_status not in (InvoiceStatus.DRAFT,):
             bad_request(
                 message=f"Cannot send invoice with status '{current_status}'. "
                         f"Only draft invoices can be sent."
             )
 
-        updated = await self._invoice_repo.update_one(
-            {"data.invoice_number": invoice_number},
-            {"status": InvoiceStatus.SENT},
-        )
+        doc.status = InvoiceStatus.SENT
+        await doc.org_save(self._ctx)
         logger.info("Sent invoice %s org=%s", invoice_number, self._ctx.org_id)
-        return updated
+        return doc
 
-    async def void_invoice(self, invoice_number: str) -> Dict[str, Any]:
+    async def void_invoice(self, invoice_number: str) -> InvoiceDoc:
         """Void/cancel an invoice. Cannot void if fully paid."""
-        doc = await self._invoice_repo.find_by_number(invoice_number)
+        doc = await InvoiceDoc.find_by_number(self._ctx, invoice_number)
         if not doc:
             not_found(message=f"Invoice '{invoice_number}' not found.")
 
-        if doc["data"]["status"] == InvoiceStatus.PAID:
+        if doc.status == InvoiceStatus.PAID:
             bad_request(
                 message="Cannot void a fully paid invoice. "
                         "Issue a credit note instead."
             )
 
-        updated = await self._invoice_repo.update_one(
-            {"data.invoice_number": invoice_number},
-            {"status": InvoiceStatus.VOID},
-        )
+        doc.status = InvoiceStatus.VOID
+        await doc.org_save(self._ctx)
         logger.info("Voided invoice %s org=%s", invoice_number, self._ctx.org_id)
-        return updated
+        return doc
 
     async def apply_payment(
         self,
         invoice_number: str,
         payment_amount: float,
-    ) -> Dict[str, Any]:
+    ) -> InvoiceDoc:
         """
         Update invoice after a payment is recorded.
 
         Called by PaymentService — not directly by routes.
         Updates amount_paid, balance_due, and status.
         """
-        doc = await self._invoice_repo.find_by_number(invoice_number)
+        doc = await InvoiceDoc.find_by_number(self._ctx, invoice_number)
         if not doc:
             not_found(message=f"Invoice '{invoice_number}' not found.")
 
-        current_paid = float(doc["data"].get("amount_paid", 0.0))
-        total = float(doc["data"].get("total", 0.0))
+        current_paid = doc.amount_paid
+        total = doc.total
 
         new_paid = round(current_paid + payment_amount, 2)
         new_balance = round(total - new_paid, 2)
@@ -368,19 +469,16 @@ class InvoiceService:
         elif new_paid > 0:
             new_status = InvoiceStatus.PARTIAL
         else:
-            new_status = doc["data"]["status"]
+            new_status = doc.status
 
-        updated = await self._invoice_repo.update_one(
-            {"data.invoice_number": invoice_number},
-            {
-                "amount_paid": new_paid,
-                "balance_due": new_balance,
-                "status": new_status,
-            },
-        )
+        doc.amount_paid = new_paid
+        doc.balance_due = new_balance
+        doc.status = new_status
+
+        await doc.org_save(self._ctx)
 
         logger.info(
             "Applied payment %.2f to invoice %s → status=%s balance=%.2f",
             payment_amount, invoice_number, new_status, new_balance,
         )
-        return updated
+        return doc

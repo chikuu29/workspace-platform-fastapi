@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query
 
 from app.common.responses import created, ok, paginated
 from app.core.context import OrgContext, get_org_context
 from app.core.security.authentications import get_authenticated_identity
 from app.db.database import get_database
 from app.modules.billing_management.services.payment_service import PaymentService
+from app.modules.billing_management.schemas.common import SuccessEnvelope, PaginatedEnvelope
+from app.modules.billing_management.schemas.payment_schemas import (
+    RecordPaymentInput,
+    PaymentResponse,
+    map_payment_doc_to_response,
+)
 
 router = APIRouter(dependencies=[Depends(get_authenticated_identity)])
 
@@ -20,9 +26,9 @@ def _get_service(
     return PaymentService(db, ctx)
 
 
-@router.post("")
+@router.post("", response_model=SuccessEnvelope[PaymentResponse], status_code=201)
 async def record_payment(
-    request: Request,
+    input_data: RecordPaymentInput,
     service: PaymentService = Depends(_get_service),
 ):
     """
@@ -31,12 +37,12 @@ async def record_payment(
     Supports all manual methods: cash, upi, card, bank_transfer, etc.
     Automatically updates the invoice status.
     """
-    data = await request.json()
-    document = await service.record_payment(data)
-    return created(message="Payment recorded successfully.", data=document)
+    doc = await service.record_payment(input_data)
+    mapped = map_payment_doc_to_response(doc)
+    return created(message="Payment recorded successfully.", data=mapped)
 
 
-@router.get("")
+@router.get("", response_model=PaginatedEnvelope[PaymentResponse])
 async def list_payments(
     invoice_ref: str = Query(None, description="Filter by invoice number"),
     method: str = Query(None, description="Filter by method: cash, upi, card, etc."),
@@ -53,14 +59,16 @@ async def list_payments(
         skip=skip,
         limit=limit,
     )
-    return paginated(message="Payments retrieved.", data=documents, total=total, skip=skip, limit=limit)
+    mapped = [map_payment_doc_to_response(doc) for doc in documents]
+    return paginated(message="Payments retrieved.", data=mapped, total=total, skip=skip, limit=limit)
 
 
-@router.get("/{payment_number:path}")
+@router.get("/{payment_number:path}", response_model=SuccessEnvelope[PaymentResponse])
 async def get_payment(
     payment_number: str,
     service: PaymentService = Depends(_get_service),
 ):
     """Get a single payment by number."""
-    document = await service.get_payment(payment_number)
-    return ok(message="Payment retrieved.", data=document)
+    doc = await service.get_payment(payment_number)
+    mapped = map_payment_doc_to_response(doc)
+    return ok(message="Payment retrieved.", data=mapped)

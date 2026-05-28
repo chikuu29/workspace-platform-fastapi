@@ -1,5 +1,5 @@
 """
-Payment Service — records payments and updates invoices.
+Payment Service — records payments and updates invoices using Beanie.
 
 Phase 1: Cash-only payments (no gateway integration).
 Phase 2 will add gateway-mediated payments with commission tracking.
@@ -25,10 +25,9 @@ from app.modules.billing_management.constants import (
     PaymentMethod,
     PaymentStatus,
 )
-from app.modules.billing_management.repositories.billing_repos import (
-    InvoiceRepository,
-    PaymentRepository,
-)
+from app.modules.billing_management.documents.invoice_doc import InvoiceDoc
+from app.modules.billing_management.documents.payment_doc import PaymentDoc
+from app.modules.billing_management.schemas.payment_schemas import RecordPaymentInput
 from app.modules.billing_management.services.invoice_service import InvoiceService
 
 logger = create_logger("billing.payment_service")
@@ -40,8 +39,6 @@ class PaymentService:
     def __init__(self, db: AsyncIOMotorDatabase, ctx: OrgContext) -> None:
         self._db = db
         self._ctx = ctx
-        self._payment_repo = PaymentRepository(db, ctx)
-        self._invoice_repo = InvoiceRepository(db, ctx)
         self._invoice_svc = InvoiceService(db, ctx)
 
     async def _generate_payment_number(self) -> str:
@@ -60,35 +57,21 @@ class PaymentService:
         )
         return f"PAY/{fy}/{doc['seq']:04d}"
 
-    async def record_payment(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    async def record_payment(self, input_data: RecordPaymentInput) -> PaymentDoc:
         """
         Record a payment against an invoice.
-
-        Expected payload:
-        {
-            "invoice_ref": "INV/2026-27/0001",
-            "amount": 5000.00,
-            "method": "cash",          // cash, upi, card, bank_transfer, etc.
-            "transaction_ref": "",     // Optional: UPI ref, bank txn ID
-            "notes": "Cash received at counter"
-        }
+        Accepts RecordPaymentInput and returns PaymentDoc.
         """
-        invoice_ref = data.get("invoice_ref", "").strip()
-        amount = float(data.get("amount", 0))
-        method = data.get("method", PaymentMethod.CASH)
-
-        # ── Validation ────────────────────────────────────────────────
-        if not invoice_ref:
-            bad_request(message="invoice_ref is required.")
-        if amount <= 0:
-            bad_request(message="Payment amount must be greater than zero.")
+        invoice_ref = input_data.invoice_ref.strip()
+        amount = input_data.amount
+        method = input_data.method
 
         # Verify invoice exists and has balance
-        invoice_doc = await self._invoice_repo.find_by_number(invoice_ref)
+        invoice_doc = await InvoiceDoc.find_by_number(self._ctx, invoice_ref)
         if not invoice_doc:
             not_found(message=f"Invoice '{invoice_ref}' not found.")
 
-        balance_due = float(invoice_doc["data"].get("balance_due", 0))
+        balance_due = invoice_doc.balance_due
         if balance_due <= 0:
             bad_request(message="This invoice has already been fully paid.")
 
@@ -96,38 +79,39 @@ class PaymentService:
         if amount > balance_due:
             amount = balance_due
 
-        # ── Generate payment number ───────────────────────────────────
+        # Generate payment number
         payment_number = await self._generate_payment_number()
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        payment_date_str = input_data.payment_date if input_data.payment_date else now_str
 
-        payment_data: Dict[str, Any] = {
-            "payment_number": payment_number,
-            "invoice_ref": invoice_ref,
-            "amount": round(amount, 2),
-            "currency": data.get("currency", DEFAULT_CURRENCY),
-            "method": method,
-            "gateway_tier": "",           # Empty for cash/manual
-            "gateway_provider": "",
-            "gateway_payment_id": "",
-            "gateway_order_id": "",
-            "gateway_signature": "",
-            "commission_rate": 0.0,       # No commission for cash
-            "commission_amount": 0.0,
-            "net_to_owner": round(amount, 2),
-            "status": PaymentStatus.CAPTURED,
-            "payment_date": data.get("payment_date", now_str),
-            "transaction_ref": data.get("transaction_ref", ""),
-            "notes": data.get("notes", ""),
-        }
-
-        # ── Insert payment record ─────────────────────────────────────
-        payment_doc = await self._payment_repo.insert_one(
-            data=payment_data,
+        # Build Beanie document
+        doc = PaymentDoc.create_for_org(
+            self._ctx,
             entity_type=ENTITY_PAYMENT,
-            prefix="PAY",
+            record_id=payment_number,
+            payment_number=payment_number,
+            invoice_ref=invoice_ref,
+            amount=round(amount, 2),
+            currency=input_data.currency,
+            method=method,
+            gateway_tier="",
+            gateway_provider="",
+            gateway_payment_id="",
+            gateway_order_id="",
+            gateway_signature="",
+            commission_rate=0.0,
+            commission_amount=0.0,
+            net_to_owner=round(amount, 2),
+            status=PaymentStatus.CAPTURED,
+            payment_date=payment_date_str,
+            transaction_ref=input_data.transaction_ref or "",
+            notes=input_data.notes or "",
         )
 
-        # ── Update invoice (amount_paid, balance_due, status) ─────────
+        # Insert payment record
+        await doc.insert()
+
+        # Update invoice (amount_paid, balance_due, status)
         await self._invoice_svc.apply_payment(invoice_ref, amount)
 
         logger.info(
@@ -135,7 +119,7 @@ class PaymentService:
             payment_number, amount, method, invoice_ref, self._ctx.org_id,
         )
 
-        return payment_doc
+        return doc
 
     async def list_payments(
         self,
@@ -145,28 +129,33 @@ class PaymentService:
         status: Optional[str] = None,
         skip: int = 0,
         limit: int = 50,
-    ) -> tuple[List[Dict[str, Any]], int]:
+    ) -> tuple[List[PaymentDoc], int]:
         """List payments with optional filters."""
         query: Dict[str, Any] = {}
         if invoice_ref:
-            query["data.invoice_ref"] = invoice_ref
+            query["invoice_ref"] = invoice_ref
         if method:
-            query["data.method"] = method
+            query["method"] = method
         if status:
-            query["data.status"] = status
+            query["status"] = status
 
-        documents = await self._payment_repo.find(
+        documents = await PaymentDoc.org_find(
+            self._ctx,
             query,
             sort=[("_meta.created.at", -1)],
             skip=skip,
             limit=limit,
         )
-        total = await self._payment_repo.count(query)
+        total = await PaymentDoc.org_count(self._ctx, query)
         return documents, total
 
-    async def get_payment(self, payment_number: str) -> Dict[str, Any]:
+    async def get_payment(self, payment_number: str) -> PaymentDoc:
         """Get a single payment by number."""
-        doc = await self._payment_repo.find_by_number(payment_number)
+        doc = await PaymentDoc.find_by_number(self._ctx, payment_number)
         if not doc:
             not_found(message=f"Payment '{payment_number}' not found.")
         return doc
+
+    async def list_payments_for_invoice(self, invoice_ref: str) -> List[PaymentDoc]:
+        """List payments for a specific invoice."""
+        return await PaymentDoc.find_by_invoice(self._ctx, invoice_ref)
