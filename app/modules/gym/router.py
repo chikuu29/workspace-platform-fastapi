@@ -799,6 +799,12 @@ async def activate_subscription(
         # Reload updated invoice doc
         invoice_doc_tuple = await invoice_svc.get_invoice(invoice_doc.invoice_number)
         invoice_doc = invoice_doc_tuple[0]
+    else:
+        if payment_method == "payment_link":
+            import logging
+            logger = logging.getLogger("app")
+            logger.info(f"Payment Link Dispatch: Secure link created for Invoice {invoice_doc.invoice_number} and sent to customer email {member_doc['data'].get('email', 'N/A')}")
+            invoice_doc = await invoice_svc.send_invoice(invoice_doc.invoice_number)
 
     # ── 7. Build subscription record ─────────────────────────────────
     subscription_data = {

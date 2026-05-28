@@ -91,7 +91,10 @@ class InvoiceService:
             upsert=True,
             return_document=True,
         )
-        return f"INV/{fy}/{doc['seq']:04d}"
+        
+        invoice_number = f"INV/{fy}/{doc['seq']:04d}"
+        print(f"Invoice Number: {invoice_number}")
+        return invoice_number
 
     async def create_invoice(self, input_data: CreateInvoiceInput) -> InvoiceDoc:
         """
