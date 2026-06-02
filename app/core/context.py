@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Header, Request, status
 
 from app.core.security.authentications import get_authenticated_identity
 
@@ -124,6 +124,7 @@ class OrgContext:
 async def get_org_context(
     request: Request,
     _: dict = Depends(get_authenticated_identity),
+    x_app_code:str = Header(..., alias="X-App-Code")  # For explicit header extraction (alternative to middleware)
 ) -> OrgContext:
     """
     Resolve OrgContext from JWT claims + security headers.
@@ -152,10 +153,10 @@ async def get_org_context(
         )
 
     # ── Extract app_code from x-app-code header ──────────────────────
-    security_headers = getattr(request.state, "security_headers", {})
-    app_code = security_headers.get("x-app-code", "")
+    # security_headers = getattr(request.state, "security_headers", {})
+    # app_code = security_headers.get("x-app-code", "")
 
-    if not app_code:
+    if not x_app_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing x-app-code header — frontend must send the app code.",
@@ -163,10 +164,10 @@ async def get_org_context(
 
     # ── Validate app subscription ────────────────────────────────────
     subscribed_apps = claims.get("subscribed_apps", [])
-    if subscribed_apps and app_code not in subscribed_apps:
+    if subscribed_apps and x_app_code not in subscribed_apps:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Organization is not subscribed to app '{app_code}'.",
+            detail=f"Organization is not subscribed to app '{x_app_code}'.",
         )
 
     return OrgContext(
@@ -176,8 +177,8 @@ async def get_org_context(
         user_id=claims.get("sub", "unknown"),
         user_name=claims.get("username", claims.get("sub", "unknown")),
         user_type=claims.get("userType", ""),
-        app_code=app_code,
-        app_name=app_code,  # Same as code for now — can resolve from DB later
+        app_code=x_app_code,
+        app_name=x_app_code,  # Same as code for now — can resolve from DB later
         subscribed_apps=subscribed_apps,
         raw_claims=claims,
     )
