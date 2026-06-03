@@ -42,7 +42,7 @@ async def create_invoice(
     Pass seller_gstin and buyer_gstin in the request body.
     Line items are priced and taxed automatically.
     """
-    doc = await service.create_invoice(input_data)
+    doc = await service.create(input_data)
     mapped = map_invoice_doc_to_response(doc)
     return created(message="Invoice created successfully.", data=mapped)
 
@@ -57,7 +57,7 @@ async def list_invoices(
     service: InvoiceService = Depends(_get_service),
 ):
     """List invoices with optional filters."""
-    documents, total = await service.list_invoices(
+    documents, total = await service.list(
         status=status,
         customer_ref_id=customer_ref_id,
         source_app=source_app,
@@ -74,7 +74,7 @@ async def get_invoice(
     service: InvoiceService = Depends(_get_service),
 ):
     """Get a single invoice with payment history."""
-    doc, payments = await service.get_invoice(invoice_number)
+    doc, payments = await service.get(invoice_number)
     mapped_invoice = map_invoice_doc_to_response(doc)
     mapped_payments = [map_payment_doc_to_response(p) for p in payments]
     detail = InvoiceDetailResponse(
@@ -91,7 +91,7 @@ async def update_invoice(
     service: InvoiceService = Depends(_get_service),
 ):
     """Update a draft invoice."""
-    doc = await service.update_invoice(invoice_number, input_data)
+    doc = await service.update(invoice_number, input_data)
     mapped = map_invoice_doc_to_response(doc)
     return ok(message="Invoice updated successfully.", data=mapped)
 
@@ -102,7 +102,7 @@ async def send_invoice(
     service: InvoiceService = Depends(_get_service),
 ):
     """Mark a draft invoice as sent."""
-    doc = await service.send_invoice(invoice_number)
+    doc = await service.send(invoice_number)
     mapped = map_invoice_doc_to_response(doc)
     return ok(message="Invoice marked as sent.", data=mapped)
 
@@ -113,6 +113,6 @@ async def void_invoice(
     service: InvoiceService = Depends(_get_service),
 ):
     """Void/cancel an invoice."""
-    doc = await service.void_invoice(invoice_number)
+    doc = await service.void(invoice_number)
     mapped = map_invoice_doc_to_response(doc)
     return ok(message="Invoice voided.", data=mapped)

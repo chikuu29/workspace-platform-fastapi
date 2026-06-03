@@ -744,10 +744,13 @@ async def activate_subscription(
 
     
 
-    from app.modules.billing.services.invoice_service import InvoiceService
-    from app.modules.billing.schemas.invoice_schemas import CreateInvoiceInput
-    from app.modules.billing.schemas.line_items import ServiceLineItem
-    from app.modules.billing.schemas.common import CustomerRefSchema
+    from app.modules.billing import (
+        BillingService,
+        CreateInvoiceInput,
+        ServiceLineItem,
+        CustomerRefSchema,
+        RecordPaymentInput,
+    )
 
     billing_input = CreateInvoiceInput(
         customer_ref=CustomerRefSchema(
@@ -774,8 +777,8 @@ async def activate_subscription(
         notes=data.get("notes", ""),
     )
 
-    invoice_svc = InvoiceService(db, ctx)
-    invoice_doc = await invoice_svc.create_invoice(billing_input)
+    billing = BillingService(db, ctx)
+    invoice_doc = await billing.invoices.create(billing_input)
 
     # ── 6. Handle Payment Recording ──────────────────────────────────
     is_paid = data.get("is_paid", False)
@@ -783,10 +786,6 @@ async def activate_subscription(
     transaction_ref = data.get("transaction_ref", "")
 
     if is_paid:
-        from app.modules.billing.services.payment_service import PaymentService
-        from app.modules.billing.schemas.payment_schemas import RecordPaymentInput
-
-        payment_svc = PaymentService(db, ctx)
         payment_input = RecordPaymentInput(
             invoice_ref=invoice_doc.invoice_number,
             amount=invoice_doc.total,
@@ -794,17 +793,17 @@ async def activate_subscription(
             transaction_ref=transaction_ref,
             notes=f"Upfront subscription payment via {payment_method.upper()}",
         )
-        await payment_svc.record_payment(payment_input)
+        await billing.payments.record(payment_input)
 
         # Reload updated invoice doc
-        invoice_doc_tuple = await invoice_svc.get_invoice(invoice_doc.invoice_number)
+        invoice_doc_tuple = await billing.invoices.get(invoice_doc.invoice_number)
         invoice_doc = invoice_doc_tuple[0]
     else:
         if payment_method == "payment_link":
             import logging
             logger = logging.getLogger("app")
             logger.info(f"Payment Link Dispatch: Secure link created for Invoice {invoice_doc.invoice_number} and sent to customer email {member_doc['data'].get('email', 'N/A')}")
-            invoice_doc = await invoice_svc.send_invoice(invoice_doc.invoice_number)
+            invoice_doc = await billing.invoices.send(invoice_doc.invoice_number)
 
     # ── 7. Build subscription record ─────────────────────────────────
     subscription_data = {

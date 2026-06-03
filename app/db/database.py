@@ -64,26 +64,22 @@ async def connect_to_mongo() -> None:
         # ── Initialize Beanie ODM ───────────────────────────────────────────
         # All billing Beanie document classes must be registered here.
         # Beanie auto-creates indexes defined in each document's Settings.indexes.
+        from app.modules.billing.documents.order_doc import OrderDoc
         from app.modules.billing.documents.invoice_doc import InvoiceDoc
         from app.modules.billing.documents.payment_doc import PaymentDoc
-        from app.modules.billing.documents.subscription_doc import SubscriptionDoc
         from app.modules.billing.documents.credit_note_doc import CreditNoteDoc
+        from app.modules.billing.documents.receipt_doc import ReceiptDoc
         from app.modules.billing.documents.tax_profile_doc import TaxProfileDoc
-        from app.modules.billing.documents.reminder_doc import ReminderDoc
-        from app.modules.billing.documents.gateway_config_doc import GatewayConfigDoc
-        from app.modules.billing.documents.settlement_doc import SettlementDoc
 
         await init_beanie(
             database=_db,
             document_models=[
+                OrderDoc,
                 InvoiceDoc,
                 PaymentDoc,
-                SubscriptionDoc,
                 CreditNoteDoc,
+                ReceiptDoc,
                 TaxProfileDoc,
-                ReminderDoc,
-                GatewayConfigDoc,
-                SettlementDoc,
             ],
         )
         logger.info("Beanie ODM initialized for all billing document models")

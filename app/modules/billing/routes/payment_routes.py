@@ -37,7 +37,7 @@ async def record_payment(
     Supports all manual methods: cash, upi, card, bank_transfer, etc.
     Automatically updates the invoice status.
     """
-    doc = await service.record_payment(input_data)
+    doc = await service.record(input_data)
     mapped = map_payment_doc_to_response(doc)
     return created(message="Payment recorded successfully.", data=mapped)
 
@@ -52,7 +52,7 @@ async def list_payments(
     service: PaymentService = Depends(_get_service),
 ):
     """List payments with optional filters."""
-    documents, total = await service.list_payments(
+    documents, total = await service.list(
         invoice_ref=invoice_ref,
         method=method,
         status=status,
@@ -69,6 +69,6 @@ async def get_payment(
     service: PaymentService = Depends(_get_service),
 ):
     """Get a single payment by number."""
-    doc = await service.get_payment(payment_number)
+    doc = await service.get(payment_number)
     mapped = map_payment_doc_to_response(doc)
     return ok(message="Payment retrieved.", data=mapped)

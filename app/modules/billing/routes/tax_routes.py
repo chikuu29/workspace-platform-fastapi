@@ -8,7 +8,7 @@ from app.common.responses import created, ok, paginated
 from app.core.context import OrgContext, get_org_context
 from app.core.security.authentications import get_authenticated_identity
 from app.db.database import get_database
-from app.modules.billing.services.tax_service import TaxService
+from app.modules.billing.services.tax_profile_service import TaxProfileService
 from app.modules.gym.schemas import sanitize_payload
 
 router = APIRouter(dependencies=[Depends(get_authenticated_identity)])
@@ -17,19 +17,19 @@ router = APIRouter(dependencies=[Depends(get_authenticated_identity)])
 def _get_service(
     ctx: OrgContext = Depends(get_org_context),
     db=Depends(get_database),
-) -> TaxService:
-    return TaxService(db, ctx)
+) -> TaxProfileService:
+    return TaxProfileService(db, ctx)
 
 
 @router.post("/profiles")
 async def create_tax_profile(
     request: Request,
-    service: TaxService = Depends(_get_service),
+    service: TaxProfileService = Depends(_get_service),
 ):
     """Create a new tax profile (GSTIN registration)."""
     raw = await request.json()
     data = sanitize_payload(raw)
-    document = await service.create_profile(data)
+    document = await service.create(data)
     return created(message="Tax profile created successfully.", data=document)
 
 
@@ -37,10 +37,10 @@ async def create_tax_profile(
 async def list_tax_profiles(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=100),
-    service: TaxService = Depends(_get_service),
+    service: TaxProfileService = Depends(_get_service),
 ):
     """List all tax profiles for the organization."""
-    documents, total = await service.list_profiles(skip=skip, limit=limit)
+    documents, total = await service.list(skip=skip, limit=limit)
     return paginated(message="Tax profiles retrieved.", data=documents, total=total, skip=skip, limit=limit)
 
 
@@ -48,12 +48,12 @@ async def list_tax_profiles(
 async def update_tax_profile(
     gstin: str,
     request: Request,
-    service: TaxService = Depends(_get_service),
+    service: TaxProfileService = Depends(_get_service),
 ):
     """Update a tax profile."""
     raw = await request.json()
     update_data = sanitize_payload(raw)
-    document = await service.update_profile(gstin, update_data)
+    document = await service.update(gstin, update_data)
     return ok(message="Tax profile updated successfully.", data=document)
 
 
@@ -75,7 +75,7 @@ async def preview_tax(
     }
     """
     data = await request.json()
-    result = TaxService.preview_tax(
+    result = TaxProfileService.preview(
         line_items=data.get("line_items", []),
         seller_gstin=data.get("seller_gstin", ""),
         place_of_supply=data.get("place_of_supply", ""),

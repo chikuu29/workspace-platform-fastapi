@@ -3,6 +3,9 @@ Billing Constants — centralized enums, entity types, and default values.
 
 All billing modules reference these constants. Using StrEnum ensures
 type safety and serialization compatibility with MongoDB / JSON.
+
+Collections kept: orders, invoices, payments, credit_notes, receipts, tax_profiles.
+Removed (Phase 2 future): subscriptions, reminders, gateway_configs, settlements.
 """
 
 from __future__ import annotations
@@ -14,29 +17,36 @@ from enum import StrEnum
 # Each entity_type maps to a logical document class within billing
 # collections. Used in _meta.entity_type for filtering.
 
-ENTITY_CATALOG = "catalog"
+ENTITY_ORDER = "order"
 ENTITY_INVOICE = "invoice"
 ENTITY_PAYMENT = "payment"
-ENTITY_SUBSCRIPTION = "subscription"
 ENTITY_CREDIT_NOTE = "credit_note"
+ENTITY_RECEIPT = "receipt"
 ENTITY_TAX_PROFILE = "tax_profile"
-ENTITY_REMINDER = "reminder"
-ENTITY_GATEWAY_CONFIG = "gateway_config"
-ENTITY_SETTLEMENT = "settlement"
+ENTITY_CATALOG = "catalog"
 
 
 # ── Collection Names ─────────────────────────────────────────────────
 # Separate collections for billing data — not the shared `records` coll.
 
-COLL_CATALOG = "catalog"
+COLL_ORDERS = "orders"
 COLL_INVOICES = "invoices"
 COLL_PAYMENTS = "payments"
-COLL_SUBSCRIPTIONS = "subscriptions"
 COLL_CREDIT_NOTES = "credit_notes"
+COLL_RECEIPTS = "receipts"
 COLL_TAX_PROFILES = "tax_profiles"
-COLL_REMINDERS = "reminders"
-COLL_GATEWAY_CONFIGS = "gateway_configs"
-COLL_SETTLEMENTS = "settlements"
+COLL_CATALOG = "catalog"
+
+
+# ── Order ────────────────────────────────────────────────────────────
+
+class OrderStatus(StrEnum):
+    """Billing order lifecycle states."""
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    INVOICED = "invoiced"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
 
 
 # ── Catalog Item Types ───────────────────────────────────────────────
@@ -108,53 +118,6 @@ class DiscountType(StrEnum):
     NONE = "none"
 
 
-# ── Gateway ──────────────────────────────────────────────────────────
-
-class GatewayTier(StrEnum):
-    """
-    Two-tier model:
-    - OWNER: Org owner's own Razorpay/Stripe keys → direct payment
-    - PLATFORM: Platform's keys → collect, deduct commission, settle
-    """
-    OWNER = "owner"
-    PLATFORM = "platform"
-
-
-class GatewayProvider(StrEnum):
-    RAZORPAY = "razorpay"
-    STRIPE = "stripe"
-    NONE = "none"
-
-
-class CommissionRateType(StrEnum):
-    PERCENTAGE = "percentage"
-    FIXED = "fixed"
-
-
-# ── Settlement ───────────────────────────────────────────────────────
-
-class SettlementStatus(StrEnum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
-class SettlementMode(StrEnum):
-    MANUAL = "manual"
-    AUTOMATIC = "automatic"
-
-
-# ── Subscription ─────────────────────────────────────────────────────
-
-class SubscriptionStatus(StrEnum):
-    ACTIVE = "active"
-    PAUSED = "paused"
-    CANCELLED = "cancelled"
-    EXPIRED = "expired"
-    PENDING_ACTIVATION = "pending_activation"
-
-
 # ── Credit Note ──────────────────────────────────────────────────────
 
 class CreditNoteStatus(StrEnum):
@@ -164,26 +127,11 @@ class CreditNoteStatus(StrEnum):
     VOID = "void"
 
 
-# ── Reminder ─────────────────────────────────────────────────────────
+# ── Receipt ──────────────────────────────────────────────────────────
 
-class ReminderType(StrEnum):
-    UPCOMING = "upcoming"
-    OVERDUE = "overdue"
-    RECURRING_RENEWAL = "recurring_renewal"
-
-
-class ReminderChannel(StrEnum):
-    EMAIL = "email"
-    SMS = "sms"
-    WHATSAPP = "whatsapp"
-    IN_APP = "in_app"
-
-
-class ReminderStatus(StrEnum):
-    SCHEDULED = "scheduled"
-    SENT = "sent"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+class ReceiptStatus(StrEnum):
+    ISSUED = "issued"
+    VOID = "void"
 
 
 # ── Tax ──────────────────────────────────────────────────────────────
@@ -223,7 +171,3 @@ GST_RATE_MAP: dict[GSTCategory, float] = {
 DEFAULT_CURRENCY = "INR"
 DEFAULT_TAX_RATE = 18.0  # GST higher rate (most services)
 DEFAULT_PAYMENT_TERMS = "Due on receipt"
-DEFAULT_COMMISSION_RATE = 5.0  # Platform commission %
-DEFAULT_MIN_COMMISSION = 10.0  # ₹10 minimum per transaction
-DEFAULT_PAYMENT_LINK_EXPIRY_HOURS = 72
-DEFAULT_REMINDER_DAYS_BEFORE = 3

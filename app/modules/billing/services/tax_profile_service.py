@@ -1,9 +1,14 @@
 """
-Tax Service — tax profile management and tax computation API.
+Tax Profile Service — tax profile management and tax computation API.
 
 Wraps the pure TaxEngine with database operations for GSTIN
 profile CRUD. Uses Beanie ODM (TaxProfileDoc) for all MongoDB
 interactions — no manual Motor queries.
+
+TaxProfileService uses custom IDs (GSTIN-based) instead of
+sequential billing numbers, so number_prefix is empty.
+
+Inherits from BaseBillingService for shared infrastructure.
 """
 
 from __future__ import annotations
@@ -14,25 +19,46 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.responses import bad_request, conflict, not_found
 from app.core.context import OrgContext
-from app.core.logger import create_logger
 from app.modules.billing.constants import ENTITY_TAX_PROFILE
 from app.modules.billing.documents.tax_profile_doc import TaxProfileDoc
 from app.modules.billing.engines.tax_engine import (
     compute_line_tax,
     compute_invoice_tax,
 )
+from app.modules.billing.services.base import BaseBillingService
 
-logger = create_logger("billing.tax_service")
 
+class TaxProfileService(BaseBillingService):
+    """
+    Tax profile management and GST computation.
 
-class TaxService:
-    """Tax profile management and GST computation using Beanie ORM."""
+    Manages GSTIN profiles for organizations and provides
+    tax computation previews without creating invoices.
 
-    def __init__(self, db: AsyncIOMotorDatabase, ctx: OrgContext) -> None:
-        self._db = db
-        self._ctx = ctx
+    Public methods:
+        create(data)                — create a tax profile (GSTIN registration)
+        update(gstin, update_data)  — update a tax profile
+        get_default()               — get the default tax profile
+        list(...)                   — list all tax profiles for the org
+        preview(...)                — preview GST computation (static, no DB)
+    """
 
-    async def create_profile(self, data: Dict[str, Any]) -> TaxProfileDoc:
+    # ── BaseBillingService Abstract Properties ───────────────────
+
+    @property
+    def service_name(self) -> str:
+        return "tax_profiles"
+
+    @property
+    def entity_type(self) -> str:
+        return ENTITY_TAX_PROFILE
+
+    # number_prefix intentionally left as "" (default) —
+    # tax profiles use GSTIN-based IDs, not sequential numbers.
+
+    # ── Public Methods ───────────────────────────────────────────
+
+    async def create(self, data: Dict[str, Any]) -> TaxProfileDoc:
         """Create a new tax profile (GSTIN registration)."""
         gstin = data.get("gstin", "").strip()
         if not gstin:
@@ -71,10 +97,12 @@ class TaxService:
         )
 
         await doc.insert()
-        logger.info("Created tax profile gstin=%s org=%s", gstin, self._ctx.org_id)
+        self._logger.info(
+            "Created tax profile gstin=%s org=%s", gstin, self._ctx.org_id,
+        )
         return doc
 
-    async def list_profiles(
+    async def list(
         self, *, skip: int = 0, limit: int = 50,
     ) -> tuple[List[TaxProfileDoc], int]:
         """List all tax profiles for the org."""
@@ -84,11 +112,11 @@ class TaxService:
         total = await TaxProfileDoc.org_count(self._ctx)
         return documents, total
 
-    async def get_default_profile(self) -> Optional[TaxProfileDoc]:
+    async def get_default(self) -> Optional[TaxProfileDoc]:
         """Get the default tax profile."""
         return await TaxProfileDoc.find_default(self._ctx)
 
-    async def update_profile(
+    async def update(
         self, gstin: str, update_data: Dict[str, Any],
     ) -> TaxProfileDoc:
         """Update a tax profile by its GSTIN."""
@@ -102,11 +130,13 @@ class TaxService:
                 setattr(doc, field_name, value)
 
         await doc.org_save(self._ctx)
-        logger.info("Updated tax profile gstin=%s org=%s", gstin, self._ctx.org_id)
+        self._logger.info(
+            "Updated tax profile gstin=%s org=%s", gstin, self._ctx.org_id,
+        )
         return doc
 
     @staticmethod
-    def preview_tax(
+    def preview(
         line_items: List[Dict[str, Any]],
         seller_gstin: str = "",
         place_of_supply: str = "",
@@ -115,6 +145,7 @@ class TaxService:
         Preview tax computation without creating an invoice.
 
         Used by the frontend to show tax breakdown before saving.
+        This is a static method — requires no database access.
         """
         line_results = []
         tax_inputs: list[tuple[float, str]] = []

@@ -6,6 +6,8 @@ Orchestrates invoice creation with:
  2. GST tax computation (TaxEngine) — GSTIN passed via API
  3. Invoice numbering (Indian financial year format: INV/2026-27/0001)
  4. Status lifecycle management (draft → sent → partial → paid)
+
+Inherits from BaseBillingService for shared infrastructure.
 """
 
 from __future__ import annotations
@@ -17,8 +19,6 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.responses import bad_request, not_found
 from app.core.context import OrgContext
-from app.core.logger import create_logger
-from app.db.org_sequence import OrgSequenceService
 from app.modules.billing.constants import (
     DEFAULT_CURRENCY,
     DEFAULT_PAYMENT_TERMS,
@@ -43,75 +43,62 @@ from app.modules.billing.schemas.invoice_schemas import (
     CreateInvoiceInput,
     UpdateInvoiceInput,
 )
+from app.modules.billing.services.base import BaseBillingService
 
-logger = create_logger("billing.invoice_service")
 
-
-def _indian_financial_year() -> str:
+class InvoiceService(BaseBillingService):
     """
-    Derive the Indian financial year string for invoice numbering.
+    Invoice lifecycle management.
 
-    Indian FY runs April → March.
-    May 2026 → "2026-27"
-    Feb 2027 → "2026-27"
+    Handles creation, updates, status transitions, and payment application.
+    Uses PricingEngine and TaxEngine for line-item computation.
+
+    Public methods:
+        create(input_data)          — create an invoice with full tax + pricing
+        create_from_order(order)    — create an invoice from a confirmed order
+        get(invoice_number)         — get invoice with payment history
+        update(invoice_number, ...) — update a draft invoice
+        send(invoice_number)        — transition draft → sent
+        void(invoice_number)        — void/cancel an invoice
+        list(...)                   — list invoices with filters
+        apply_payment(...)          — update invoice after payment (internal)
     """
-    now = datetime.now(timezone.utc)
-    year = now.year
-    month = now.month
 
-    if month >= 4:
-        # April onwards → current year to next year
-        return f"{year}-{str(year + 1)[-2:]}"
-    else:
-        # Jan-Mar → previous year to current year
-        return f"{year - 1}-{str(year)[-2:]}"
+    # ── BaseBillingService Abstract Properties ───────────────────
 
+    @property
+    def service_name(self) -> str:
+        return "invoices"
 
-class InvoiceService:
-    """Business logic for the invoice lifecycle using Beanie."""
+    @property
+    def entity_type(self) -> str:
+        return ENTITY_INVOICE
 
-    def __init__(self, db: AsyncIOMotorDatabase, ctx: OrgContext) -> None:
-        self._db = db
-        self._ctx = ctx
+    @property
+    def number_prefix(self) -> str:
+        return "INV"
 
-    async def _generate_invoice_number(self) -> str:
+    # ── Line-Item Computation (shared by create + update) ────────
+
+    def _compute_line_items(
+        self,
+        raw_items: list,
+        seller_gstin: str,
+        buyer_gstin: str,
+        place_of_supply: str,
+    ) -> tuple[List[LineItemEmbed], list[tuple[float, str]]]:
         """
-        Generate Indian financial-year invoice number.
+        Compute pricing + tax for each line item.
 
-        Format: INV/2026-27/0001
-        Uses OrgSequenceService for atomic counter per org+app+FY.
+        Returns:
+            Tuple of (computed_items, line_tax_inputs).
+            line_tax_inputs is [(taxable_amount, tax_category), ...] for
+            aggregate invoice tax computation.
         """
-        fy = _indian_financial_year()
-        seq = OrgSequenceService(self._db, self._ctx)
-        # Use FY as part of the counter key to reset numbering each FY
-        counter_id = f"invoice:{fy}"
-        doc = await seq._sequences.find_one_and_update(
-            {"_id": f"{self._ctx.org_name}:{self._ctx.app_code}:{counter_id}"},
-            {"$inc": {"seq": 1}},
-            upsert=True,
-            return_document=True,
-        )
-        
-        invoice_number = f"INV/{fy}/{doc['seq']:04d}"
-        print(f"Invoice Number: {invoice_number}")
-        return invoice_number
-
-    async def create_invoice(self, input_data: CreateInvoiceInput) -> InvoiceDoc:
-        """
-        Create an invoice with full tax + pricing computation.
-
-        Price is TRUSTED — the calling app already verified it.
-        Billing computes: tax, discounts, totals, invoice number.
-        """
-        # ── Process each line item ────────────────────────────────────
         computed_items: List[LineItemEmbed] = []
         line_tax_inputs: list[tuple[float, str]] = []
 
-        seller_gstin = input_data.seller_gstin
-        buyer_gstin = input_data.buyer_gstin or ""
-        place_of_supply = input_data.place_of_supply or ""
-
-        for item in input_data.line_items:
+        for item in raw_items:
             qty = item.quantity
             price = item.unit_price
             disc_type = item.discount_type
@@ -175,7 +162,27 @@ class InvoiceService:
 
             line_tax_inputs.append((final_calc.taxable_amount, tax_cat))
 
-        # ── Aggregate invoice totals ──────────────────────────────────
+        return computed_items, line_tax_inputs
+
+    # ── Public Methods ───────────────────────────────────────────
+
+    async def create(self, input_data: CreateInvoiceInput) -> InvoiceDoc:
+        """
+        Create an invoice with full tax + pricing computation.
+
+        Price is TRUSTED — the calling app already verified it.
+        Billing computes: tax, discounts, totals, invoice number.
+        """
+        seller_gstin = input_data.seller_gstin
+        buyer_gstin = input_data.buyer_gstin or ""
+        place_of_supply = input_data.place_of_supply or ""
+
+        # Compute line items
+        computed_items, line_tax_inputs = self._compute_line_items(
+            input_data.line_items, seller_gstin, buyer_gstin, place_of_supply,
+        )
+
+        # Aggregate invoice totals
         agg_tax = compute_invoice_tax(
             line_taxable_amounts=line_tax_inputs,
             seller_gstin=seller_gstin,
@@ -185,8 +192,8 @@ class InvoiceService:
         subtotal = sum(li.taxable_amount for li in computed_items)
         total = round(subtotal + agg_tax.total_tax, 2)
 
-        # ── Generate invoice number ───────────────────────────────────
-        invoice_number = await self._generate_invoice_number()
+        # Generate invoice number via inherited _generate_number()
+        invoice_number = await self._generate_number()
 
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         due_date_str = input_data.due_date if input_data.due_date else now_str
@@ -240,13 +247,71 @@ class InvoiceService:
 
         await doc.insert()
 
-        logger.info(
+        self._logger.info(
             "Created invoice %s total=%.2f org=%s app=%s",
             invoice_number, total, self._ctx.org_id, self._ctx.app_code,
         )
         return doc
 
-    async def list_invoices(
+    async def create_from_order(
+        self,
+        order_doc: Any,
+    ) -> InvoiceDoc:
+        """
+        Create an invoice from a confirmed order.
+
+        Called by OrderService.confirm() — reuses the order's
+        pre-computed line items and totals.
+
+        Args:
+            order_doc: The confirmed OrderDoc to generate an invoice from.
+
+        Returns:
+            The newly created InvoiceDoc.
+        """
+        invoice_number = await self._generate_number()
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        doc = InvoiceDoc.create_for_org(
+            self._ctx,
+            entity_type=ENTITY_INVOICE,
+            record_id=invoice_number,
+            invoice_number=invoice_number,
+            invoice_type="standard",
+            customer_ref=order_doc.customer_ref,
+            line_items=order_doc.line_items,
+            subtotal=order_doc.subtotal,
+            tax_breakdown=TaxBreakdownEmbed(
+                tax_type="gst",
+                taxable_amount=order_doc.subtotal,
+                total_tax=order_doc.tax_amount,
+            ),
+            total=order_doc.total,
+            amount_paid=0.0,
+            balance_due=order_doc.total,
+            currency=order_doc.currency,
+            seller_gstin=order_doc.seller_gstin,
+            buyer_gstin=order_doc.buyer_gstin,
+            place_of_supply=order_doc.place_of_supply,
+            is_inter_state=False,
+            status=InvoiceStatus.DRAFT,
+            issue_date=now_str,
+            due_date=now_str,
+            payment_terms=DEFAULT_PAYMENT_TERMS,
+            source_app=self._ctx.app_code,
+            notes=order_doc.notes,
+            terms_and_conditions="",
+        )
+
+        await doc.insert()
+
+        self._logger.info(
+            "Created invoice %s from order %s org=%s",
+            invoice_number, order_doc.order_number, self._ctx.org_id,
+        )
+        return doc
+
+    async def list(
         self,
         *,
         status: Optional[str] = None,
@@ -274,7 +339,7 @@ class InvoiceService:
         total = await InvoiceDoc.org_count(self._ctx, query)
         return documents, total
 
-    async def get_invoice(self, invoice_number: str) -> tuple[InvoiceDoc, List[PaymentDoc]]:
+    async def get(self, invoice_number: str) -> tuple[InvoiceDoc, List[PaymentDoc]]:
         """Get a single invoice with payment history."""
         doc = await InvoiceDoc.find_by_number(self._ctx, invoice_number)
         if not doc:
@@ -283,7 +348,7 @@ class InvoiceService:
         payments = await PaymentDoc.find_by_invoice(self._ctx, invoice_number)
         return doc, payments
 
-    async def update_invoice(
+    async def update(
         self, invoice_number: str, input_data: UpdateInvoiceInput,
     ) -> InvoiceDoc:
         """Update a draft invoice. Only draft invoices can be edited."""
@@ -308,74 +373,14 @@ class InvoiceService:
             doc.terms_and_conditions = input_data.terms_and_conditions
 
         if input_data.line_items is not None:
-            # Recompute line items
-            computed_items: List[LineItemEmbed] = []
-            line_tax_inputs: list[tuple[float, str]] = []
-
+            # Recompute line items using shared method
             seller_gstin = doc.seller_gstin
             buyer_gstin = doc.buyer_gstin
             place_of_supply = doc.place_of_supply
 
-            for item in input_data.line_items:
-                qty = item.quantity
-                price = item.unit_price
-                disc_type = item.discount_type
-                disc_value = item.discount_value
-                tax_cat = item.tax_category
-
-                line_calc = compute_line_pricing(
-                    quantity=qty,
-                    unit_price=price,
-                    discount_type=disc_type,
-                    discount_value=disc_value,
-                    tax_amount=0.0,
-                )
-
-                line_tax = compute_line_tax(
-                    taxable_amount=line_calc.taxable_amount,
-                    tax_category=tax_cat,
-                    seller_gstin=seller_gstin,
-                    place_of_supply=place_of_supply or buyer_gstin,
-                )
-
-                final_calc = compute_line_pricing(
-                    quantity=qty,
-                    unit_price=price,
-                    discount_type=disc_type,
-                    discount_value=disc_value,
-                    tax_amount=line_tax.total_tax,
-                )
-
-                item_dump = item.model_dump(exclude_unset=False)
-
-                computed_items.append(
-                    LineItemEmbed(
-                        item_type=item.item_type,
-                        source_item_code=item.source_item_code or "",
-                        description=item.description,
-                        hsn_sac_code=item.hsn_sac_code or "",
-                        quantity=qty,
-                        unit_price=price,
-                        discount_type=disc_type,
-                        discount_value=disc_value,
-                        discount_amount=final_calc.discount_amount,
-                        tax_category=tax_cat,
-                        tax_rate=line_tax.tax_rate,
-                        tax_amount=line_tax.total_tax,
-                        taxable_amount=final_calc.taxable_amount,
-                        line_total=final_calc.line_total,
-                        unit_of_measurement=item_dump.get("unit_of_measurement"),
-                        service_date=item_dump.get("service_date"),
-                        service_period_start=item_dump.get("service_period_start"),
-                        service_period_end=item_dump.get("service_period_end"),
-                        plan_code=item_dump.get("plan_code"),
-                        billing_cycle=item_dump.get("billing_cycle"),
-                        period_start=item_dump.get("period_start"),
-                        period_end=item_dump.get("period_end"),
-                    )
-                )
-
-                line_tax_inputs.append((final_calc.taxable_amount, tax_cat))
+            computed_items, line_tax_inputs = self._compute_line_items(
+                input_data.line_items, seller_gstin, buyer_gstin, place_of_supply,
+            )
 
             agg_tax = compute_invoice_tax(
                 line_taxable_amounts=line_tax_inputs,
@@ -406,10 +411,10 @@ class InvoiceService:
             doc.is_inter_state = agg_tax.is_inter_state
 
         await doc.org_save(self._ctx)
-        logger.info("Updated invoice %s org=%s", invoice_number, self._ctx.org_id)
+        self._logger.info("Updated invoice %s org=%s", invoice_number, self._ctx.org_id)
         return doc
 
-    async def send_invoice(self, invoice_number: str) -> InvoiceDoc:
+    async def send(self, invoice_number: str) -> InvoiceDoc:
         """Mark an invoice as sent (transitions draft → sent)."""
         doc = await InvoiceDoc.find_by_number(self._ctx, invoice_number)
         if not doc:
@@ -424,10 +429,10 @@ class InvoiceService:
 
         doc.status = InvoiceStatus.SENT
         await doc.org_save(self._ctx)
-        logger.info("Sent invoice %s org=%s", invoice_number, self._ctx.org_id)
+        self._logger.info("Sent invoice %s org=%s", invoice_number, self._ctx.org_id)
         return doc
 
-    async def void_invoice(self, invoice_number: str) -> InvoiceDoc:
+    async def void(self, invoice_number: str) -> InvoiceDoc:
         """Void/cancel an invoice. Cannot void if fully paid."""
         doc = await InvoiceDoc.find_by_number(self._ctx, invoice_number)
         if not doc:
@@ -441,7 +446,7 @@ class InvoiceService:
 
         doc.status = InvoiceStatus.VOID
         await doc.org_save(self._ctx)
-        logger.info("Voided invoice %s org=%s", invoice_number, self._ctx.org_id)
+        self._logger.info("Voided invoice %s org=%s", invoice_number, self._ctx.org_id)
         return doc
 
     async def apply_payment(
@@ -454,6 +459,9 @@ class InvoiceService:
 
         Called by PaymentService — not directly by routes.
         Updates amount_paid, balance_due, and status.
+
+        Returns:
+            Updated InvoiceDoc with new balance and status.
         """
         doc = await InvoiceDoc.find_by_number(self._ctx, invoice_number)
         if not doc:
@@ -480,7 +488,7 @@ class InvoiceService:
 
         await doc.org_save(self._ctx)
 
-        logger.info(
+        self._logger.info(
             "Applied payment %.2f to invoice %s → status=%s balance=%.2f",
             payment_amount, invoice_number, new_status, new_balance,
         )

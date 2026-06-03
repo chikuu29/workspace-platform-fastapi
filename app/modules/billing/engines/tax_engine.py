@@ -18,7 +18,7 @@ invoice creation time — not pre-configured.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from app.modules.billing.constants import (
     DEFAULT_TAX_RATE,
@@ -26,7 +26,58 @@ from app.modules.billing.constants import (
     GSTCategory,
     TaxType,
 )
-from app.modules.billing.models.base import TaxBreakdown
+
+
+# ── Tax Computation Result ───────────────────────────────────────────
+# Pure data container — the output of tax engine computations.
+# Frozen dataclass ensures immutability (appropriate for computation results).
+
+
+@dataclass(frozen=True, slots=True)
+class TaxBreakdown:
+    """
+    Itemized tax computation result.
+
+    For intra-state: cgst + sgst = total_tax
+    For inter-state: igst = total_tax
+    """
+
+    tax_type: str = "gst"
+    tax_rate: float = 0.0
+    taxable_amount: float = 0.0
+    cgst_rate: float = 0.0
+    cgst_amount: float = 0.0
+    sgst_rate: float = 0.0
+    sgst_amount: float = 0.0
+    igst_rate: float = 0.0
+    igst_amount: float = 0.0
+    total_tax: float = 0.0
+    is_inter_state: bool = False
+    seller_gstin: str = ""
+    buyer_gstin: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize for API responses and MongoDB storage."""
+        return {
+            "tax_type": self.tax_type,
+            "tax_rate": self.tax_rate,
+            "taxable_amount": self.taxable_amount,
+            "cgst_rate": self.cgst_rate,
+            "cgst_amount": self.cgst_amount,
+            "sgst_rate": self.sgst_rate,
+            "sgst_amount": self.sgst_amount,
+            "igst_rate": self.igst_rate,
+            "igst_amount": self.igst_amount,
+            "total_tax": self.total_tax,
+            "is_inter_state": self.is_inter_state,
+            "seller_gstin": self.seller_gstin,
+            "buyer_gstin": self.buyer_gstin,
+        }
+
+    @classmethod
+    def zero(cls) -> TaxBreakdown:
+        """No-tax breakdown for exempt items."""
+        return cls(tax_type="none", tax_rate=0.0)
 
 
 def extract_state_code(gstin: str) -> str:
