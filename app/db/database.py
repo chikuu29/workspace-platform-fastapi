@@ -62,14 +62,31 @@ async def connect_to_mongo() -> None:
         await _ensure_indexes(_db)
 
         # ── Initialize Beanie ODM ───────────────────────────────────────────
-        from app.modules.billing_management.documents.invoice_doc import InvoiceDoc
-        from app.modules.billing_management.documents.payment_doc import PaymentDoc
+        # All billing Beanie document classes must be registered here.
+        # Beanie auto-creates indexes defined in each document's Settings.indexes.
+        from app.modules.billing.documents.invoice_doc import InvoiceDoc
+        from app.modules.billing.documents.payment_doc import PaymentDoc
+        from app.modules.billing.documents.subscription_doc import SubscriptionDoc
+        from app.modules.billing.documents.credit_note_doc import CreditNoteDoc
+        from app.modules.billing.documents.tax_profile_doc import TaxProfileDoc
+        from app.modules.billing.documents.reminder_doc import ReminderDoc
+        from app.modules.billing.documents.gateway_config_doc import GatewayConfigDoc
+        from app.modules.billing.documents.settlement_doc import SettlementDoc
 
         await init_beanie(
             database=_db,
-            document_models=[InvoiceDoc, PaymentDoc]
+            document_models=[
+                InvoiceDoc,
+                PaymentDoc,
+                SubscriptionDoc,
+                CreditNoteDoc,
+                TaxProfileDoc,
+                ReminderDoc,
+                GatewayConfigDoc,
+                SettlementDoc,
+            ],
         )
-        logger.info("Beanie ODM initialized for billing models")
+        logger.info("Beanie ODM initialized for all billing document models")
 
     except Exception as e:
         logger.error("MongoDB connection failed: %s", e)
@@ -111,6 +128,10 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
 
     These indexes are idempotent — MongoDB skips creation if they
     already exist. Called once during startup.
+
+    NOTE: Billing collection indexes are now managed by Beanie via
+    each document's Settings.indexes. The manual indexes below are
+    ONLY for the shared `records` collection used by non-billing modules.
     """
     records = db["records"]
 
@@ -137,66 +158,6 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     )
 
     logger.info("MongoDB indexes ensured for 'records' collection")
-
-    # ── Billing Collection Indexes ───────────────────────────────────────
-    # Separate collections for the centralized billing module.
-    # Each index is idempotent — safe to call on every startup.
-
-    # Invoices: overdue lookup, unique invoice numbers, customer history
-    await db["billing_invoices"].create_index(
-        [("_org.org_id", 1), ("data.status", 1), ("data.due_date", 1)],
-        name="idx_bill_inv_status_due", background=True,
-    )
-    await db["billing_invoices"].create_index(
-        [("_org.org_id", 1), ("data.invoice_number", 1)],
-        name="idx_bill_inv_number", unique=True, background=True,
-    )
-    await db["billing_invoices"].create_index(
-        [("_org.org_id", 1), ("data.customer_ref.ref_id", 1)],
-        name="idx_bill_inv_customer", background=True,
-    )
-
-    # Payments: invoice lookup, gateway tier filtering
-    await db["billing_payments"].create_index(
-        [("_org.org_id", 1), ("data.invoice_ref", 1)],
-        name="idx_bill_pay_invoice", background=True,
-    )
-    await db["billing_payments"].create_index(
-        [("_org.org_id", 1), ("data.gateway_tier", 1), ("data.status", 1)],
-        name="idx_bill_pay_tier_status", background=True,
-    )
-
-    # Subscriptions: renewal processing
-    await db["billing_subscriptions"].create_index(
-        [("_org.org_id", 1), ("data.status", 1), ("data.next_billing_date", 1)],
-        name="idx_bill_sub_renewal", background=True,
-    )
-
-    # Gateway configs: one active config per org+app
-    await db["billing_gateway_configs"].create_index(
-        [("_org.org_id", 1), ("_org.app_code", 1)],
-        name="idx_bill_gw_org_app", unique=True, background=True,
-    )
-
-    # Settlements: status lookup
-    await db["billing_settlements"].create_index(
-        [("_org.org_id", 1), ("data.status", 1)],
-        name="idx_bill_stl_status", background=True,
-    )
-
-    # Reminders: scheduled processing
-    await db["billing_reminders"].create_index(
-        [("data.status", 1), ("data.scheduled_date", 1)],
-        name="idx_bill_rem_scheduled", background=True,
-    )
-
-
-
-    # Tax profiles: GSTIN lookup
-    await db["billing_tax_profiles"].create_index(
-        [("_org.org_id", 1), ("data.gstin", 1)],
-        name="idx_bill_tax_gstin", unique=True, background=True,
-    )
-
-    logger.info("MongoDB indexes ensured for billing collections")
-
+    # Billing collection indexes are auto-managed by Beanie's Settings.indexes
+    # in each document class. No manual Motor index creation needed here.
+    logger.info("Billing indexes delegated to Beanie document Settings.indexes")

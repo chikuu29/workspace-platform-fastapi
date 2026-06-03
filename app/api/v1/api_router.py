@@ -5,7 +5,7 @@ from app.modules.gym.router import router as gym_router
 from app.modules.oauth.router import router as oauth_router
 from app.modules.users.router import router as users_router
 from app.modules.hostel.router import router as hostel_router
-from app.modules.billing_management.router import router as billing_router
+from app.modules.billing.router import router as billing_router
 
 api_router = APIRouter()
 

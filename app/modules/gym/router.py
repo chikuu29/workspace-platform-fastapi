@@ -737,17 +737,17 @@ async def activate_subscription(
     # ── 5. Generate Billing Invoice ──────────────────────────────────
     member_name = f"{member_doc['data'].get('firstName', '')} {member_doc['data'].get('lastName', '')}".strip()
     seller_gstin = "29AABCU9603R1ZM"  # Default fallback
-    tax_profile = await db["billing_tax_profiles"].find_one({"_org.org_id": ctx.org_id})
+    tax_profile = await db["tax_profiles"].find_one({"_org.org_id": ctx.org_id})
     if tax_profile:
         seller_gstin = tax_profile.get("data", {}).get("gstin", seller_gstin)
 
 
     
 
-    from app.modules.billing_management.services.invoice_service import InvoiceService
-    from app.modules.billing_management.schemas.invoice_schemas import CreateInvoiceInput
-    from app.modules.billing_management.schemas.line_items import ServiceLineItem
-    from app.modules.billing_management.schemas.common import CustomerRefSchema
+    from app.modules.billing.services.invoice_service import InvoiceService
+    from app.modules.billing.schemas.invoice_schemas import CreateInvoiceInput
+    from app.modules.billing.schemas.line_items import ServiceLineItem
+    from app.modules.billing.schemas.common import CustomerRefSchema
 
     billing_input = CreateInvoiceInput(
         customer_ref=CustomerRefSchema(
@@ -783,8 +783,8 @@ async def activate_subscription(
     transaction_ref = data.get("transaction_ref", "")
 
     if is_paid:
-        from app.modules.billing_management.services.payment_service import PaymentService
-        from app.modules.billing_management.schemas.payment_schemas import RecordPaymentInput
+        from app.modules.billing.services.payment_service import PaymentService
+        from app.modules.billing.schemas.payment_schemas import RecordPaymentInput
 
         payment_svc = PaymentService(db, ctx)
         payment_input = RecordPaymentInput(
