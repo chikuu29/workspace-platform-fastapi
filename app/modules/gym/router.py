@@ -867,6 +867,610 @@ async def activate_subscription(
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  MEMBERSHIP BILLING FLOW
+#  Lifecycle: Order (pending) → confirm → Invoice → Payment
+#             Subscription stays "pending" until payment completes
+#             → complete_membership_activation() activates sub + member
+# ══════════════════════════════════════════════════════════════════════
+
+
+@router.post("/membership/enroll")
+async def enroll_membership(
+    request: Request,
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """
+    Enroll a member in a subscription plan — creates subscription + billing order.
+
+    IMPORTANT: Subscription is created with status="pending" (NOT active).
+    Member is NOT activated here. Activation happens ONLY when payment
+    is confirmed via collect-payment or webhook.
+
+    If a pending subscription already exists for this member + plan,
+    it is RESUMED (not duplicated) — returns the existing order details.
+
+    Expected payload:
+        {
+            "member_id": "M-1",
+            "plan_code": "GYM_PRO",
+            "start_date": "2026-06-04",   (optional — defaults to today)
+            "notes": "Signup promo"        (optional)
+        }
+    """
+    raw = await request.json()
+    data = sanitize_payload(raw)
+
+    member_id = data.get("member_id")
+    plan_code = data.get("plan_code")
+    start_date = data.get("start_date")
+
+    if not member_id:
+        bad_request(message="member_id is required.")
+    if not plan_code:
+        bad_request(message="plan_code is required.")
+
+    repo = OrgRepository(db, "records", ctx)
+
+    # ── 1. Verify member exists ──────────────────────────────────────
+    member_doc = await repo.find_one({
+        **MEMBER_QUERY,
+        "$or": [
+            {"data.member_id": member_id},
+            {"_meta.record_id": member_id},
+        ],
+    })
+    if not member_doc:
+        not_found(message=f"Member '{member_id}' not found.")
+
+    # ── 2. Verify plan exists and is active ──────────────────────────
+    plan_doc = await repo.find_one({
+        **PLAN_QUERY,
+        "data.code": plan_code,
+        "data.is_active": True,
+    })
+    if not plan_doc:
+        not_found(message=f"Active plan with code '{plan_code}' not found.")
+
+    # ── 3. Check for existing subscriptions ──────────────────────────
+    # Block if member already has an ACTIVE (paid) subscription
+    active_sub = await repo.find_one({
+        **SUBSCRIPTION_QUERY,
+        "data.member_id": member_id,
+        "data.status": "active",
+    })
+    if active_sub:
+        conflict(
+            message=f"Member '{member_id}' already has an active subscription.",
+            error_code="ACTIVE_SUBSCRIPTION_EXISTS",
+            details={
+                "existing_subscription_id": active_sub["data"].get("subscription_id"),
+                "existing_plan": active_sub["data"].get("plan_name"),
+            },
+        )
+
+    # If member has a PENDING subscription for the same plan, resume it
+    pending_sub = await repo.find_one({
+        **SUBSCRIPTION_QUERY,
+        "data.member_id": member_id,
+        "data.plan_code": plan_code,
+        "data.status": "pending",
+    })
+    if pending_sub:
+        # Return existing pending subscription — no duplicate created
+        return ok(
+            message="Resuming existing pending enrollment.",
+            data={
+                "subscription_id": pending_sub["data"].get("subscription_id"),
+                "member_id": member_id,
+                "plan_name": pending_sub["data"].get("plan_name"),
+                "plan_code": plan_code,
+                "start_date": pending_sub["data"].get("start_date"),
+                "end_date": pending_sub["data"].get("end_date"),
+                "order_number": pending_sub["data"].get("order_number"),
+                "order_total": pending_sub["data"].get("payment_amount"),
+                "status": "pending",
+                "is_resumed": True,
+            },
+        )
+
+    # ── 4. Calculate subscription dates ──────────────────────────────
+    plan_data = plan_doc["data"]
+    billing_cycle = plan_data.get("billing_cycle", "monthly")
+
+    if not start_date:
+        start_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    end_date = _calculate_end_date(start_date, billing_cycle)
+
+    # ── 5. Create subscription record (PENDING — not active) ─────────
+    member_name = (
+        f"{member_doc['data'].get('firstName', '')} "
+        f"{member_doc['data'].get('lastName', '')}"
+    ).strip()
+
+    seq = OrgSequenceService(db, ctx)
+    subscription_id = await seq.simple("subscription", prefix="SUB")
+
+    subscription_data = {
+        "member_id": member_id,
+        "member_name": member_name,
+        "plan_code": plan_code,
+        "plan_name": plan_data.get("name", ""),
+        "plan_record_id": plan_doc["_meta"]["record_id"],
+        "price": plan_data.get("price", 0),
+        "currency": plan_data.get("currency", "INR"),
+        "billing_cycle": billing_cycle,
+        "start_date": start_date,
+        "end_date": end_date,
+        "subscription_id": subscription_id,
+        # KEY: Status is PENDING until payment is confirmed
+        "status": "pending",
+        "is_paid": False,
+        "payment_method": None,
+        "payment_amount": None,  # Set after order is created (server-computed)
+        "order_number": None,    # Set after order is created
+        "invoice_number": None,  # Set after order is confirmed
+        "notes": data.get("notes", ""),
+    }
+
+    await repo.insert_one(
+        data=subscription_data,
+        entity_type=ENTITY_SUBSCRIPTION,
+        prefix=ctx.app_code.upper(),
+    )
+
+    # ── 6. Create billing ORDER (price from DB, never frontend) ──────
+    from app.modules.gym.billing_service import GymBillingService
+
+    gym_billing = GymBillingService(db, ctx)
+    order_doc = await gym_billing.create_membership_order(
+        member_doc=member_doc,
+        plan_doc=plan_doc,
+        subscription_id=subscription_id,
+        start_date=start_date,
+        end_date=end_date,
+        notes=data.get("notes", ""),
+    )
+
+    # ── 7. Update subscription with order reference ──────────────────
+    await repo.update_one(
+        {**SUBSCRIPTION_QUERY, "data.subscription_id": subscription_id},
+        {
+            "order_number": order_doc.order_number,
+            "payment_amount": order_doc.total,
+        },
+    )
+
+    return created(
+        message="Membership enrolled — awaiting payment.",
+        data={
+            "subscription_id": subscription_id,
+            "member_id": member_id,
+            "plan_name": plan_data.get("name"),
+            "plan_code": plan_code,
+            "start_date": start_date,
+            "end_date": end_date,
+            "order_number": order_doc.order_number,
+            "order_total": order_doc.total,
+            "order_subtotal": order_doc.subtotal,
+            "order_tax": order_doc.tax_amount,
+            "status": "pending",
+        },
+    )
+
+
+@router.post("/membership/{subscription_id}/collect-payment")
+async def collect_membership_payment(
+    subscription_id: str,
+    request: Request,
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """
+    Collect payment for a membership subscription.
+
+    Full lifecycle executed here:
+        1. Confirm Order → auto-creates Invoice
+        2. Record Payment against Invoice
+        3. Activate subscription + member (via common method)
+
+    Expected payload:
+        {
+            "payment_method": "cash",       (required: cash | upi | card)
+            "transaction_ref": "UPI-1234",  (optional: external reference)
+            "notes": "Walk-in payment"      (optional)
+        }
+
+    Side effects:
+        - Order: pending → invoiced → completed
+        - Invoice: draft → sent → paid
+        - Subscription: pending → active
+        - Member: attention → active
+        - Receipt: auto-generated
+    """
+    raw = await request.json()
+    data = sanitize_payload(raw)
+
+    payment_method = data.get("payment_method")
+    if not payment_method:
+        bad_request(message="payment_method is required (cash, upi, card).")
+
+    allowed_methods = {"cash", "upi", "card", "net_banking", "bank_transfer"}
+    if payment_method not in allowed_methods:
+        bad_request(
+            message=f"Invalid payment method '{payment_method}'. "
+                    f"Allowed: {', '.join(sorted(allowed_methods))}."
+        )
+
+    repo = OrgRepository(db, "records", ctx)
+
+    # ── 1. Find subscription ─────────────────────────────────────────
+    sub_doc = await repo.find_one({
+        **SUBSCRIPTION_QUERY,
+        "$or": [
+            {"data.subscription_id": subscription_id},
+            {"_meta.record_id": subscription_id},
+        ],
+    })
+    if not sub_doc:
+        not_found(message=f"Subscription '{subscription_id}' not found.")
+
+    # Guard: already paid
+    if sub_doc["data"].get("is_paid"):
+        bad_request(message="Subscription is already fully paid.")
+
+    order_number = sub_doc["data"].get("order_number")
+    if not order_number:
+        bad_request(message="Subscription has no linked billing order.")
+
+    # ── 2. Confirm order → creates invoice ───────────────────────────
+    from app.modules.gym.billing_service import GymBillingService
+
+    gym_billing = GymBillingService(db, ctx)
+
+    # Only confirm if not already confirmed (idempotent)
+    invoice_number = sub_doc["data"].get("invoice_number")
+    if not invoice_number:
+        order_doc, invoice_doc = await gym_billing.confirm_and_invoice(
+            order_number
+        )
+        invoice_number = invoice_doc.invoice_number
+
+        # Store invoice reference on subscription
+        await repo.update_one(
+            {**SUBSCRIPTION_QUERY, "data.subscription_id": subscription_id},
+            {"invoice_number": invoice_number},
+        )
+    else:
+        # Already confirmed — just fetch the invoice
+        invoice_doc, _ = await gym_billing.get_invoice_with_payments(
+            invoice_number
+        )
+
+    # ── 3. Check balance due ─────────────────────────────────────────
+    latest_invoice, _ = await gym_billing.get_invoice_with_payments(
+        invoice_number
+    )
+    if latest_invoice.balance_due <= 0:
+        bad_request(message="Invoice is already fully paid.")
+
+    # ── 4. Record payment via billing SDK ────────────────────────────
+    payment_doc = await gym_billing.record_payment(
+        invoice_number=invoice_number,
+        payment_amount=latest_invoice.balance_due,
+        payment_method=payment_method,
+        transaction_ref=data.get("transaction_ref", ""),
+        notes=data.get("notes", ""),
+    )
+
+    # ── 5. Reload invoice to get updated status ──────────────────────
+    updated_invoice, payments = await gym_billing.get_invoice_with_payments(
+        invoice_number
+    )
+
+    # ── 6. If fully paid → activate membership (COMMON METHOD) ───────
+    is_fully_paid = updated_invoice.balance_due <= 0
+
+    if is_fully_paid:
+        await gym_billing.complete_membership_activation(
+            subscription_id=subscription_id,
+            payment_method=payment_method,
+        )
+
+    return ok(
+        message="Payment recorded successfully.",
+        data={
+            "payment_number": payment_doc.payment_number,
+            "payment_method": payment_method,
+            "amount_paid": payment_doc.amount,
+            "invoice_number": invoice_number,
+            "invoice_status": updated_invoice.status,
+            "balance_due": updated_invoice.balance_due,
+            "is_fully_paid": is_fully_paid,
+            "subscription_id": subscription_id,
+            "subscription_status": "active" if is_fully_paid else "pending",
+        },
+    )
+
+
+@router.post("/membership/{subscription_id}/send-payment-link")
+async def send_membership_payment_link(
+    subscription_id: str,
+    request: Request,
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """
+    Generate and send a payment link for remote/later payment.
+
+    Confirms the order → creates invoice → generates Razorpay link.
+    Subscription stays PENDING — activates only when webhook confirms payment.
+
+    Expected payload:
+        {
+            "send_via": "email"  (email | sms | both — default: email)
+        }
+    """
+    raw = await request.json()
+    data = sanitize_payload(raw)
+
+    repo = OrgRepository(db, "records", ctx)
+
+    # ── 1. Find subscription ─────────────────────────────────────────
+    sub_doc = await repo.find_one({
+        **SUBSCRIPTION_QUERY,
+        "$or": [
+            {"data.subscription_id": subscription_id},
+            {"_meta.record_id": subscription_id},
+        ],
+    })
+    if not sub_doc:
+        not_found(message=f"Subscription '{subscription_id}' not found.")
+
+    if sub_doc["data"].get("is_paid"):
+        bad_request(message="Subscription is already fully paid. No link needed.")
+
+    order_number = sub_doc["data"].get("order_number")
+    if not order_number:
+        bad_request(message="Subscription has no linked billing order.")
+
+    # ── 2. Confirm order → creates invoice ───────────────────────────
+    from app.modules.gym.billing_service import GymBillingService
+
+    gym_billing = GymBillingService(db, ctx)
+
+    invoice_number = sub_doc["data"].get("invoice_number")
+    if not invoice_number:
+        order_doc, invoice_doc = await gym_billing.confirm_and_invoice(
+            order_number
+        )
+        invoice_number = invoice_doc.invoice_number
+
+        await repo.update_one(
+            {**SUBSCRIPTION_QUERY, "data.subscription_id": subscription_id},
+            {"invoice_number": invoice_number},
+        )
+    else:
+        invoice_doc, _ = await gym_billing.get_invoice_with_payments(
+            invoice_number
+        )
+
+    # ── 3. Get current balance ───────────────────────────────────────
+    latest_invoice, _ = await gym_billing.get_invoice_with_payments(
+        invoice_number
+    )
+
+    if latest_invoice.balance_due <= 0:
+        bad_request(message="Invoice is already fully paid. No link needed.")
+
+    # ── 4. Generate payment link URL ─────────────────────────────────
+    payment_link_url = gym_billing.generate_payment_link_url(
+        invoice_number=invoice_number,
+        total=latest_invoice.balance_due,
+    )
+
+    # Update subscription with payment link info
+    await repo.update_one(
+        {**SUBSCRIPTION_QUERY, "data.subscription_id": subscription_id},
+        {
+            "payment_link_url": payment_link_url,
+        },
+    )
+
+    send_via = data.get("send_via", "email")
+
+    import logging
+    log = logging.getLogger("app.gym.billing")
+    log.info(
+        "Payment link dispatched via %s: invoice=%s member=%s url=%s",
+        send_via, invoice_number,
+        sub_doc["data"].get("member_id"),
+        payment_link_url,
+    )
+
+    return ok(
+        message="Payment link generated and dispatched.",
+        data={
+            "payment_link_url": payment_link_url,
+            "invoice_number": invoice_number,
+            "invoice_status": latest_invoice.status,
+            "balance_due": latest_invoice.balance_due,
+            "total": latest_invoice.total,
+            "send_via": send_via,
+            "subscription_id": subscription_id,
+        },
+    )
+
+
+@router.post("/membership/webhook/payment-complete")
+async def membership_payment_webhook(
+    request: Request,
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """
+    Webhook endpoint for external payment confirmation.
+
+    Called by:
+        - Razorpay webhook after payment link is paid
+        - Any future payment gateway callback
+
+    Uses the SAME complete_membership_activation() method as
+    direct payment — ensuring identical activation logic.
+
+    Expected payload:
+        {
+            "subscription_id": "SUB-001",
+            "invoice_number": "INV/2026-27/0001",
+            "payment_method": "upi",
+            "transaction_ref": "rzp_pay_xxx",
+            "amount": 5900.00,
+            "gateway_payment_id": "pay_xxx"
+        }
+    """
+    raw = await request.json()
+    data = sanitize_payload(raw)
+
+    subscription_id = data.get("subscription_id")
+    invoice_number = data.get("invoice_number")
+    payment_method = data.get("payment_method", "online")
+    transaction_ref = data.get("transaction_ref", "")
+    amount = data.get("amount")
+
+    if not subscription_id or not invoice_number:
+        bad_request(message="subscription_id and invoice_number are required.")
+
+    from app.modules.gym.billing_service import GymBillingService
+
+    gym_billing = GymBillingService(db, ctx)
+
+    # 1. Record payment (if amount is provided)
+    if amount and amount > 0:
+        await gym_billing.record_payment(
+            invoice_number=invoice_number,
+            payment_amount=amount,
+            payment_method=payment_method,
+            transaction_ref=transaction_ref,
+            notes=f"Webhook payment: {data.get('gateway_payment_id', '')}",
+        )
+
+    # 2. Check if invoice is fully paid
+    updated_invoice, _ = await gym_billing.get_invoice_with_payments(
+        invoice_number
+    )
+
+    is_fully_paid = updated_invoice.balance_due <= 0
+
+    # 3. Activate membership if fully paid (SAME COMMON METHOD)
+    if is_fully_paid:
+        await gym_billing.complete_membership_activation(
+            subscription_id=subscription_id,
+            payment_method=payment_method,
+        )
+
+    return ok(
+        message="Webhook processed.",
+        data={
+            "subscription_id": subscription_id,
+            "invoice_number": invoice_number,
+            "is_fully_paid": is_fully_paid,
+            "invoice_status": updated_invoice.status,
+            "balance_due": updated_invoice.balance_due,
+        },
+    )
+
+
+@router.get("/membership/{subscription_id}/invoice")
+async def get_membership_invoice(
+    subscription_id: str,
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_database),
+):
+    """
+    Get invoice details for a subscription.
+
+    Returns the full invoice with server-computed tax breakdown,
+    payment history, and current balance.
+    """
+    repo = OrgRepository(db, "records", ctx)
+
+    sub_doc = await repo.find_one({
+        **SUBSCRIPTION_QUERY,
+        "$or": [
+            {"data.subscription_id": subscription_id},
+            {"_meta.record_id": subscription_id},
+        ],
+    })
+    if not sub_doc:
+        not_found(message=f"Subscription '{subscription_id}' not found.")
+
+    invoice_number = sub_doc["data"].get("invoice_number")
+    if not invoice_number:
+        not_found(message="Subscription has no linked invoice yet. Payment not initiated.")
+
+    from app.modules.gym.billing_service import GymBillingService
+
+    gym_billing = GymBillingService(db, ctx)
+    invoice_doc, payments = await gym_billing.get_invoice_with_payments(
+        invoice_number
+    )
+
+    payment_history = [
+        {
+            "payment_number": p.payment_number,
+            "amount": p.amount,
+            "method": p.method,
+            "status": p.status,
+            "payment_date": p.payment_date,
+            "transaction_ref": p.transaction_ref,
+        }
+        for p in payments
+    ]
+
+    return ok(
+        message="Invoice details retrieved.",
+        data={
+            "subscription_id": subscription_id,
+            "invoice_number": invoice_doc.invoice_number,
+            "invoice_type": invoice_doc.invoice_type,
+            "subtotal": invoice_doc.subtotal,
+            "tax_breakdown": {
+                "tax_type": invoice_doc.tax_breakdown.tax_type,
+                "tax_rate": invoice_doc.tax_breakdown.tax_rate,
+                "taxable_amount": invoice_doc.tax_breakdown.taxable_amount,
+                "cgst_rate": invoice_doc.tax_breakdown.cgst_rate,
+                "cgst_amount": invoice_doc.tax_breakdown.cgst_amount,
+                "sgst_rate": invoice_doc.tax_breakdown.sgst_rate,
+                "sgst_amount": invoice_doc.tax_breakdown.sgst_amount,
+                "igst_rate": invoice_doc.tax_breakdown.igst_rate,
+                "igst_amount": invoice_doc.tax_breakdown.igst_amount,
+                "total_tax": invoice_doc.tax_breakdown.total_tax,
+                "is_inter_state": invoice_doc.tax_breakdown.is_inter_state,
+            },
+            "total": invoice_doc.total,
+            "amount_paid": invoice_doc.amount_paid,
+            "balance_due": invoice_doc.balance_due,
+            "currency": invoice_doc.currency,
+            "status": invoice_doc.status,
+            "issue_date": invoice_doc.issue_date,
+            "due_date": invoice_doc.due_date,
+            "payment_terms": invoice_doc.payment_terms,
+            "payment_history": payment_history,
+            "member": {
+                "member_id": sub_doc["data"].get("member_id"),
+                "member_name": sub_doc["data"].get("member_name"),
+            },
+            "plan": {
+                "plan_code": sub_doc["data"].get("plan_code"),
+                "plan_name": sub_doc["data"].get("plan_name"),
+                "billing_cycle": sub_doc["data"].get("billing_cycle"),
+            },
+        },
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  SUBSCRIPTION STATS
 # ══════════════════════════════════════════════════════════════════════
 
