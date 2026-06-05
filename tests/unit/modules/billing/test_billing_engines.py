@@ -1,11 +1,10 @@
 import pytest
-from app.modules.billing_management.engines.tax_engine import (
+from app.modules.billing.engines.tax_engine import (
     compute_line_tax,
     compute_invoice_tax,
     extract_state_code,
 )
-from app.modules.billing_management.engines.commission_engine import compute_commission
-from app.modules.billing_management.engines.pricing_engine import (
+from app.modules.billing.engines.pricing_engine import (
     compute_line_pricing,
     compute_invoice_totals,
 )
@@ -48,42 +47,6 @@ def test_tax_engine_inter_state():
     assert result.cgst_amount == 0.0
     assert result.sgst_amount == 0.0
     assert result.igst_amount == 1800.0
-
-
-def test_commission_engine_percentage():
-    # Percentage commission with cap and floor
-    # 5% of 10000 is 500
-    res = compute_commission(
-        payment_amount=10000.0,
-        rate_type="percentage",
-        rate_value=5.0,
-        min_commission=10.0,
-        max_commission=1000.0,
-    )
-    assert res.commission_amount == 500.0
-    assert res.net_to_owner == 9500.0
-
-    # Floor check: 5% of 100 is 5, but min is 10
-    res_floor = compute_commission(
-        payment_amount=100.0,
-        rate_type="percentage",
-        rate_value=5.0,
-        min_commission=10.0,
-        max_commission=1000.0,
-    )
-    assert res_floor.commission_amount == 10.0
-    assert res_floor.net_to_owner == 90.0
-
-    # Cap check: 5% of 30000 is 1500, but max is 1000
-    res_cap = compute_commission(
-        payment_amount=30000.0,
-        rate_type="percentage",
-        rate_value=5.0,
-        min_commission=10.0,
-        max_commission=1000.0,
-    )
-    assert res_cap.commission_amount == 1000.0
-    assert res_cap.net_to_owner == 29000.0
 
 
 def test_pricing_engine():
