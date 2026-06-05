@@ -47,3 +47,10 @@ async def generate_simple_sequence(org_id: str, app_id: str, entity_type: str, p
     seq_number = sequence_doc["seq"]
     
     return f"{prefix}-{seq_number}"
+
+
+
+
+
+# async def get_next_sequence(db:AsyncIOMotorDatabase,sequence_name:str)->str:
+    
