@@ -110,7 +110,7 @@ async def _enrich_member(member: dict, repo: OrgRepository) -> dict:
 #  MEMBER CRUD
 # ══════════════════════════════════════════════════════════════════════
 
-@router.post("/addMember")
+@router.post("/members")
 async def add_member(
     request: Request,
     ctx: OrgContext = Depends(get_org_context),

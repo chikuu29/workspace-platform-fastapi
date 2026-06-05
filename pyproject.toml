@@ -22,4 +22,12 @@ dependencies = [
     "prometheus-fastapi-instrumentator>=7.0.0",
     "python-dateutil>=2.9.0",
     "structlog>=25.5.0",
+    "pytest-asyncio>=1.4.0",
 ]
+
+[tool.pytest.ini_options]
+# Expose the backend root so `from app.*` imports resolve in tests.
+pythonpath = ["."]
+# auto mode: every async def test_* is collected automatically without
+# needing per-test @pytest.mark.asyncio decorators.
+asyncio_mode = "auto"
