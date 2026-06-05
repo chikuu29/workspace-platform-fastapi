@@ -18,64 +18,64 @@ logger= create_logger(__name__)
 router = APIRouter()
 
 
-@router.post("/register")
-async def register_user(
-    payload: RegisterRequest,
-    service: AuthService = Depends(get_auth_service),
-    request_context=Depends(require_request_context),
-):
-    """Register a new user with local credentials."""
-    response_data = await service.register(payload)
-    return success_response(
-        payload={
-            "projectName": request_context.client_name,
-            "data": response_data,
-        },
-        message=f"User: {payload.userName} registered successfully",
-    )
+# @router.post("/register")
+# async def register_user(
+#     payload: RegisterRequest,
+#     service: AuthService = Depends(get_auth_service),
+#     request_context=Depends(require_request_context),
+# ):
+#     """Register a new user with local credentials."""
+#     response_data = await service.register(payload)
+#     return success_response(
+#         payload={
+#             "projectName": request_context.client_name,
+#             "data": response_data,
+#         },
+#         message=f"User: {payload.userName} registered successfully",
+#     )
 
 
-@router.post("/login")
-async def login_user(
-    payload: LoginRequest,
-    request: Request,
-    service: AuthService = Depends(get_auth_service),
-    request_context=Depends(require_request_context),
-):
-    """Authenticate user with local credentials and issue JWT tokens."""
-    ip = request.client.host if request.client else None
-    user_agent = request.headers.get("user-agent", "")
+# @router.post("/login")
+# async def login_user(
+#     payload: LoginRequest,
+#     request: Request,
+#     service: AuthService = Depends(get_auth_service),
+#     request_context=Depends(require_request_context),
+# ):
+#     """Authenticate user with local credentials and issue JWT tokens."""
+#     ip = request.client.host if request.client else None
+#     user_agent = request.headers.get("user-agent", "")
 
-    login_result = await service.login(payload, ip, user_agent, request_context.client_name)
-    user = login_result["user"]
-    tokens = login_result["tokens"]
+#     login_result = await service.login(payload, ip, user_agent, request_context.client_name)
+#     user = login_result["user"]
+#     tokens = login_result["tokens"]
 
-    response = success_response(
-        payload={
-            "authProvider": "login-web",
-            "login_info": {
-                "userFullName": user.get("userName"),
-                "role": user.get("role", "user"),
-                "image": user.get("image"),
-                "email": user.get("email"),
-                "phone": user.get("phone"),
-                "firstName": user.get("firstName"),
-                "lastName": user.get("lastName"),
-            },
-            "accessToken": tokens["access_token"],
-        },
-        message="Login successful",
-    )
+#     response = success_response(
+#         payload={
+#             "authProvider": "login-web",
+#             "login_info": {
+#                 "userFullName": user.get("userName"),
+#                 "role": user.get("role", "user"),
+#                 "image": user.get("image"),
+#                 "email": user.get("email"),
+#                 "phone": user.get("phone"),
+#                 "firstName": user.get("firstName"),
+#                 "lastName": user.get("lastName"),
+#             },
+#             "accessToken": tokens["access_token"],
+#         },
+#         message="Login successful",
+#     )
 
-    set_auth_cookie(
-        response, "refresh_token", tokens["refresh_token"],
-        max_age=settings.LOCAL_REFRESH_TOKEN_EXPIRE_SECONDS, same_site="lax",
-    )
-    set_auth_cookie(
-        response, settings.session_cookie_name, tokens["refresh_token"],
-        max_age=settings.LOCAL_REFRESH_TOKEN_EXPIRE_SECONDS,
-    )
-    return response
+#     set_auth_cookie(
+#         response, "refresh_token", tokens["refresh_token"],
+#         max_age=settings.LOCAL_REFRESH_TOKEN_EXPIRE_SECONDS, same_site="lax",
+#     )
+#     set_auth_cookie(
+#         response, settings.session_cookie_name, tokens["refresh_token"],
+#         max_age=settings.LOCAL_REFRESH_TOKEN_EXPIRE_SECONDS,
+#     )
+#     return response
 
 
 @router.get("/me")

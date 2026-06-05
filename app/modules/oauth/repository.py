@@ -1,13 +1,14 @@
 from typing import Optional, Dict, Any
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from app.common.repository import BaseRepository
+# from app.common.repository import BaseRepository
 
-class OAuthRepository(BaseRepository):
+class OAuthRepository():
     """
     Handles internal user database operations for OAuth authentication.
     """
     def __init__(self, db: AsyncIOMotorDatabase, collection_name: str = "user"):
-        super().__init__(db, collection_name)
+        # super().__init__(db, collection_name)
+        pass
 
     async def find_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         return await self.collection.find_one({"email": email})

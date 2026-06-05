@@ -4,15 +4,15 @@ from typing import Dict, Any, Optional
 
 import jwt
 from app.core.config import settings
-from app.modules.auth.repository import AuthRepository
+# from app.modules.auth.repository import AuthRepository
 from app.core.logger import create_logger
 
 class AuthService:
     """
     Encapsulates core authentication and session coordination business logic.
     """
-    def __init__(self, repository: AuthRepository):
-        self.repository = repository
+    def __init__(self):
+        # self.repository = repository
         self.logger = create_logger("auth_service")
 
     def get_now_iso(self) -> str:

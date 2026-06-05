@@ -12,35 +12,35 @@ from app.modules.oauth.dependencies import get_oauth_service
 router = APIRouter()
 
 
-@router.get("/google")
-async def start_google_login(
-    redirectTo: str = Query("/", alias="redirectTo"),
-    service: OAuthService = Depends(get_oauth_service),
-):
-    """Redirect user to Google OAuth consent screen."""
-    url = service.get_google_auth_url(redirectTo)
-    return RedirectResponse(url=url, status_code=307)
+# @router.get("/google")
+# async def start_google_login(
+#     redirectTo: str = Query("/", alias="redirectTo"),
+#     service: OAuthService = Depends(get_oauth_service),
+# ):
+#     """Redirect user to Google OAuth consent screen."""
+#     url = service.get_google_auth_url(redirectTo)
+#     return RedirectResponse(url=url, status_code=307)
 
 
-@router.get("/google/callback")
-async def google_callback(
-    code: str = Query(...),
-    state: Optional[str] = Query(None),
-    service: OAuthService = Depends(get_oauth_service),
-):
-    """Handle Google OAuth callback — exchange code for tokens."""
-    result = await service.process_google_callback(code, state)
+# @router.get("/google/callback")
+# async def google_callback(
+#     code: str = Query(...),
+#     state: Optional[str] = Query(None),
+#     service: OAuthService = Depends(get_oauth_service),
+# ):
+#     """Handle Google OAuth callback — exchange code for tokens."""
+#     result = await service.process_google_callback(code, state)
 
-    redirect_response = RedirectResponse(url=result["redirect_to"], status_code=307)
-    set_auth_cookie(
-        redirect_response, "refresh_token", result["tokens"]["refresh_token"],
-        max_age=settings.LOCAL_REFRESH_TOKEN_EXPIRE_SECONDS, same_site="lax",
-    )
-    set_auth_cookie(
-        redirect_response, settings.session_cookie_name, result["tokens"]["refresh_token"],
-        max_age=settings.LOCAL_REFRESH_TOKEN_EXPIRE_SECONDS,
-    )
-    return redirect_response
+#     redirect_response = RedirectResponse(url=result["redirect_to"], status_code=307)
+#     set_auth_cookie(
+#         redirect_response, "refresh_token", result["tokens"]["refresh_token"],
+#         max_age=settings.LOCAL_REFRESH_TOKEN_EXPIRE_SECONDS, same_site="lax",
+#     )
+#     set_auth_cookie(
+#         redirect_response, settings.session_cookie_name, result["tokens"]["refresh_token"],
+#         max_age=settings.LOCAL_REFRESH_TOKEN_EXPIRE_SECONDS,
+#     )
+#     return redirect_response
 
 
 @router.post("/exchange")
