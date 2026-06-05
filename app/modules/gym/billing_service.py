@@ -32,10 +32,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
-
+from app.common.org_repository import OrgRepository
 from app.common.responses import bad_request, not_found
 from app.core.context import OrgContext
-from app.db.org_repository import OrgRepository
+from app.db.org_sequence import OrgSequenceService
 from app.modules.billing import (
     BillingService,
     CreateOrderInput,
