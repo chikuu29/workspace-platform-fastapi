@@ -1,20 +1,23 @@
 """
-gym/routers/invoices.py — Invoice-first membership sales flow + webhook.
+gym/routers/invoices.py — Order-first membership sales flow.
 
 Correct lifecycle (subscription created ONLY after payment confirmed):
-    1. POST /membership/create-invoice       → Invoice created (no subscription)
-    2. GET  /invoices/{invoice_number}       → Display to receptionist
-    3. POST /invoices/{n}/pay                → Payment + subscription + activation (atomic)
-    4. POST /invoices/{n}/send-link          → Send payment link for later
-    5. POST /invoices/{n}/cancel             → Cancel unpaid invoice
+    1. POST /membership/create-order            → Order created (pending)
+    2. GET  /orders/{order_number}              → Display order to receptionist
+    3. POST /orders/{order_number}/confirm      → Confirm order → auto-create invoice
+    4. GET  /invoices/{invoice_number}          → Display invoice to receptionist
+    5. POST /invoices/{n}/pay                   → Payment + subscription + activation
+    6. POST /invoices/{n}/send-link             → Send payment link for later
+    7. POST /invoices/{n}/cancel                → Cancel unpaid invoice
 
 Webhook:
-    POST /membership/webhook/payment-complete → External gateway callback
+    POST /membership/webhook/payment-complete   → External gateway callback
 
 Legacy per-subscription invoice view:
-    GET  /membership/{subscription_id}/invoice → Invoice for an existing subscription
+    GET  /membership/{subscription_id}/invoice  → Invoice for an existing sub
 """
 
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -39,27 +42,65 @@ router = APIRouter()
 _log = logging.getLogger("app.gym.billing")
 
 
+# ── Helpers ──────────────────────────────────────────────────────────
+
+def _build_gym_context(
+    member_id: str,
+    plan_code: str,
+    billing_cycle: str,
+    start_date: str,
+    end_date: str,
+) -> str:
+    """
+    Serialize gym-specific metadata into a JSON string for order notes.
+
+    The billing SDK's SourceRefEmbed only carries app/ref_type/ref_id.
+    We embed the richer gym context in the order's notes field as a
+    structured JSON envelope so downstream steps (confirm, pay) can
+    reconstruct the full membership intent.
+    """
+    return json.dumps({
+        "member_id": member_id,
+        "plan_code": plan_code,
+        "billing_cycle": billing_cycle,
+        "start_date": start_date,
+        "end_date": end_date,
+    })
+
+
+def _parse_gym_context(notes: str) -> dict:
+    """
+    Extract gym-specific metadata from order notes.
+
+    Returns an empty dict if parsing fails — caller must validate.
+    """
+    try:
+        return json.loads(notes)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
 # ══════════════════════════════════════════════════════════════════════
-#  STEP 1 — CREATE INVOICE (no subscription written)
+#  STEP 1 — CREATE ORDER (no subscription, no invoice)
 # ══════════════════════════════════════════════════════════════════════
 
-@router.post("/membership/create-invoice")
-async def create_membership_invoice(
+@router.post("/membership/create-order")
+async def create_membership_order(
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
     db=Depends(get_db),
 ):
     """
-    Create a billing invoice for a gym membership — NO subscription created.
+    Create a billing ORDER for a gym membership — NO subscription or invoice created.
 
-    This is the step 2→3 transition in the sales flow:
-        SelectPlan → ReviewOrder → **create-invoice** → InvoiceDetails
+    This is the first step in the sales flow:
+        SelectPlan → ReviewOrder → **create-order** → OrderView
 
-    The invoice is created in DRAFT status using the billing SDK. The plan
-    price is read from the database — never from the frontend payload.
+    The order captures billing intent with server-computed pricing + tax.
+    Plan price is read from the database — never from the frontend payload.
 
-    Idempotency: If an unpaid draft invoice already exists for this
-    member + plan combination, it is returned rather than duplicated.
+    Idempotency: If a pending order already exists for this member + plan
+    combination, it is returned rather than creating a duplicate.
 
     Expected payload:
         {
@@ -69,7 +110,7 @@ async def create_membership_invoice(
         }
 
     Returns:
-        invoice_number, subtotal, tax_breakdown, total, status, due_date
+        order_number, subtotal, tax_amount, total, status=pending
     """
     raw = await request.json()
     data = sanitize_payload(raw)
@@ -130,11 +171,11 @@ async def create_membership_invoice(
 
     end_date = _calculate_end_date(start_date, billing_cycle)
 
-    # ── 5. Build and create invoice via billing SDK ──────────────────
+    # ── 5. Build and create ORDER via billing SDK ────────────────────
     from app.modules.gym.billing_service import GymBillingService
     from app.modules.billing import (
         BillingService,
-        CreateInvoiceInput,
+        CreateOrderInput,
         ServiceLineItem,
         CustomerRefSchema,
     )
@@ -148,8 +189,17 @@ async def create_membership_invoice(
         f"{member_data.get('lastName', '')}"
     ).strip()
 
+    # Serialize gym context into notes for downstream steps
+    gym_context_json = _build_gym_context(
+        member_id=member_id,
+        plan_code=plan_code,
+        billing_cycle=billing_cycle,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
     billing = BillingService(db, ctx)
-    invoice_input = CreateInvoiceInput(
+    order_input = CreateOrderInput(
         customer_ref=CustomerRefSchema(
             ref_type="member",
             ref_id=member_id,
@@ -172,28 +222,22 @@ async def create_membership_invoice(
         ],
         seller_gstin=seller_gstin,
         place_of_supply=seller_gstin[:2],
-        due_date=end_date,
-        notes=data.get("notes", ""),
-        # Source ref carries member+plan context — no subscription yet
+        # Source ref links to member — limited to app/ref_type/ref_id
         source_ref={
             "app": ctx.app_code,
             "ref_type": "membership_intent",
-            "member_id": member_id,
-            "plan_code": plan_code,
-            "start_date": start_date,
-            "end_date": end_date,
-            "billing_cycle": billing_cycle,
+            "ref_id": member_id,
         },
+        # Full gym context stored as structured JSON in notes
+        notes=gym_context_json,
     )
 
-    invoice_doc = await billing.invoices.create(invoice_input)
-    # Transition draft → sent immediately so the invoice is "live"
-    invoice_doc = await billing.invoices.send(invoice_doc.invoice_number)
+    order_doc = await billing.orders.create(order_input)
 
     return created(
-        message="Invoice created successfully. Awaiting payment.",
+        message="Order created successfully. Review and confirm to generate invoice.",
         data={
-            "invoice_number": invoice_doc.invoice_number,
+            "order_number": order_doc.order_number,
             "member_id": member_id,
             "member_name": member_name,
             "plan_name": plan_data.get("name"),
@@ -201,30 +245,147 @@ async def create_membership_invoice(
             "billing_cycle": billing_cycle,
             "start_date": start_date,
             "end_date": end_date,
-            "subtotal": invoice_doc.subtotal,
-            "tax": invoice_doc.tax_amount,
-            "total": invoice_doc.total,
-            "balance_due": invoice_doc.balance_due,
-            "status": invoice_doc.status,
-            "issue_date": (
-                invoice_doc.issue_date.isoformat()
-                if hasattr(invoice_doc.issue_date, "isoformat")
-                else str(invoice_doc.issue_date)
-            ),
-            "due_date": (
-                invoice_doc.due_date.isoformat()
-                if hasattr(invoice_doc.due_date, "isoformat")
-                else str(invoice_doc.due_date)
-            ),
+            "subtotal": order_doc.subtotal,
+            "tax_amount": order_doc.tax_amount,
+            "total": order_doc.total,
+            "status": order_doc.status,
         },
     )
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  STEP 2 — GET INVOICE
+#  STEP 2 — GET ORDER
 # ══════════════════════════════════════════════════════════════════════
 
-@router.get("/invoices/{invoice_number}")
+@router.get("/orders/{order_number:path}")
+async def get_gym_order(
+    order_number: str,
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_db),
+):
+    """
+    Fetch a gym membership order for the OrderView page.
+
+    Returns the order with server-computed pricing, tax, and status.
+    The gym context (member_id, plan_code, dates) is extracted from notes.
+    """
+    from app.modules.billing import BillingService
+
+    billing = BillingService(db, ctx)
+    order_doc = await billing.orders.get(order_number)
+
+    if not order_doc:
+        not_found(message=f"Order '{order_number}' not found.")
+
+    # Extract gym context from notes
+    gym_ctx = _parse_gym_context(order_doc.notes)
+
+    # Build customer_ref safely
+    customer_ref = {}
+    if order_doc.customer_ref:
+        customer_ref = {
+            "ref_type": order_doc.customer_ref.ref_type,
+            "ref_id": order_doc.customer_ref.ref_id,
+            "name": order_doc.customer_ref.name,
+            "email": order_doc.customer_ref.email,
+            "phone": order_doc.customer_ref.phone,
+        }
+
+    # Build line items
+    line_items = [
+        {
+            "description": li.description,
+            "quantity": li.quantity,
+            "unit_price": li.unit_price,
+            "tax_amount": li.tax_amount,
+            "taxable_amount": li.taxable_amount,
+            "line_total": li.line_total,
+            "source_item_code": li.source_item_code,
+            "hsn_sac_code": li.hsn_sac_code,
+            "service_period_start": li.service_period_start,
+            "service_period_end": li.service_period_end,
+        }
+        for li in (order_doc.line_items or [])
+    ]
+
+    return ok(
+        message="Order retrieved.",
+        data={
+            "order_number": order_doc.order_number,
+            "status": order_doc.status,
+            "customer_ref": customer_ref,
+            "line_items": line_items,
+            "subtotal": order_doc.subtotal,
+            "tax_amount": order_doc.tax_amount,
+            "total": order_doc.total,
+            "currency": order_doc.currency,
+            "invoice_ref": order_doc.invoice_ref,
+            # Flattened gym context for UI convenience
+            "member_id": gym_ctx.get("member_id", ""),
+            "plan_code": gym_ctx.get("plan_code", ""),
+            "billing_cycle": gym_ctx.get("billing_cycle", ""),
+            "start_date": gym_ctx.get("start_date", ""),
+            "end_date": gym_ctx.get("end_date", ""),
+        },
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  STEP 3 — CONFIRM ORDER → AUTO-CREATE INVOICE
+# ══════════════════════════════════════════════════════════════════════
+
+@router.post("/orders/{order_number:path}/confirm")
+async def confirm_gym_order(
+    order_number: str,
+    ctx: OrgContext = Depends(get_org_context),
+    db=Depends(get_db),
+):
+    """
+    Confirm a pending order — auto-creates a linked invoice.
+
+    This is the transition from OrderView to InvoiceView:
+        OrderView → **confirm** → InvoiceView
+
+    The billing SDK handles:
+        Order (pending → invoiced)
+        Invoice (draft → sent)
+
+    Returns:
+        order_number, order_status, invoice_number, invoice_status
+    """
+    from app.modules.gym.billing_service import GymBillingService
+
+    gym_billing = GymBillingService(db, ctx)
+    order_doc, invoice_doc = await gym_billing.confirm_and_invoice(order_number)
+
+    # Extract gym context from order notes so frontend can display it
+    gym_ctx = _parse_gym_context(order_doc.notes)
+
+    return ok(
+        message="Order confirmed. Invoice generated.",
+        data={
+            "order_number": order_doc.order_number,
+            "order_status": order_doc.status,
+            "invoice_number": invoice_doc.invoice_number,
+            "invoice_status": invoice_doc.status,
+            # Carry gym context forward for the InvoiceView
+            "member_id": gym_ctx.get("member_id", ""),
+            "plan_code": gym_ctx.get("plan_code", ""),
+            "billing_cycle": gym_ctx.get("billing_cycle", ""),
+            "start_date": gym_ctx.get("start_date", ""),
+            "end_date": gym_ctx.get("end_date", ""),
+            "subtotal": invoice_doc.subtotal,
+            "tax_amount": invoice_doc.tax_amount if hasattr(invoice_doc, "tax_amount") else 0,
+            "total": invoice_doc.total,
+        },
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  STEP 4 — GET INVOICE
+# ══════════════════════════════════════════════════════════════════════
+
+@router.get("/invoices/{invoice_number:path}")
 async def get_gym_invoice(
     invoice_number: str,
     ctx: OrgContext = Depends(get_org_context),
@@ -233,11 +394,12 @@ async def get_gym_invoice(
     """
     Fetch a gym membership invoice with full payment history.
 
-    Used by the InvoiceDetails page (step 4 in the sales flow).
-    The invoice document includes source_ref metadata that carries
-    member_id, plan_code, and date range needed for the UI.
+    Used by the InvoiceDetails page. Since InvoiceDoc has no source_ref,
+    we look up the originating order via OrderDoc.find_by_invoice() to
+    reconstruct member/plan context for the UI.
     """
     from app.modules.gym.billing_service import GymBillingService
+    from app.modules.billing.documents.order_doc import OrderDoc
 
     gym_billing = GymBillingService(db, ctx)
     invoice_doc, payments = await gym_billing.get_invoice_with_payments(invoice_number)
@@ -261,11 +423,23 @@ async def get_gym_invoice(
         for p in (payments or [])
     ]
 
-    source_ref = getattr(invoice_doc, "source_ref", {}) or {}
+    # Look up originating order for gym context
+    order_doc = await OrderDoc.find_by_invoice(ctx, invoice_number)
+    gym_ctx = _parse_gym_context(order_doc.notes) if order_doc else {}
 
     # Resolve customer_ref safely — SDK may return dict or object
     raw_customer_ref = getattr(invoice_doc, "customer_ref", {})
-    customer_ref = raw_customer_ref if isinstance(raw_customer_ref, dict) else {}
+    if raw_customer_ref and hasattr(raw_customer_ref, "ref_id"):
+        customer_ref = {
+            "ref_id": raw_customer_ref.ref_id,
+            "name": raw_customer_ref.name,
+            "email": raw_customer_ref.email,
+            "phone": raw_customer_ref.phone,
+        }
+    elif isinstance(raw_customer_ref, dict):
+        customer_ref = raw_customer_ref
+    else:
+        customer_ref = {}
 
     return ok(
         message="Invoice retrieved.",
@@ -273,46 +447,36 @@ async def get_gym_invoice(
             "invoice_number": invoice_doc.invoice_number,
             "status": invoice_doc.status,
             "subtotal": invoice_doc.subtotal,
-            "tax_amount": invoice_doc.tax_amount,
+            "tax_amount": (
+                invoice_doc.tax_breakdown.total_tax
+                if invoice_doc.tax_breakdown
+                else 0
+            ),
             "total": invoice_doc.total,
             "amount_paid": invoice_doc.amount_paid,
             "balance_due": invoice_doc.balance_due,
             "currency": getattr(invoice_doc, "currency", "INR"),
-            "issue_date": (
-                invoice_doc.issue_date.isoformat()
-                if hasattr(invoice_doc.issue_date, "isoformat")
-                else str(invoice_doc.issue_date)
-            ),
-            "due_date": (
-                invoice_doc.due_date.isoformat()
-                if hasattr(invoice_doc.due_date, "isoformat")
-                else str(invoice_doc.due_date)
-            ),
+            "issue_date": invoice_doc.issue_date,
+            "due_date": invoice_doc.due_date,
             "payment_terms": getattr(invoice_doc, "payment_terms", ""),
-            "customer_ref": {
-                "ref_id": customer_ref.get("ref_id", ""),
-                "name": customer_ref.get("name", ""),
-                "email": customer_ref.get("email", ""),
-                "phone": customer_ref.get("phone", ""),
-            },
-            "source_ref": source_ref,
+            "customer_ref": customer_ref,
             "payment_history": payment_history,
-            # Flattened source_ref fields for UI convenience
-            "member_id": source_ref.get("member_id", ""),
-            "plan_code": source_ref.get("plan_code", ""),
-            "plan_name": source_ref.get("plan_name", ""),
-            "billing_cycle": source_ref.get("billing_cycle", ""),
-            "start_date": source_ref.get("start_date", ""),
-            "end_date": source_ref.get("end_date", ""),
+            # Gym context from originating order
+            "order_number": order_doc.order_number if order_doc else "",
+            "member_id": gym_ctx.get("member_id", ""),
+            "plan_code": gym_ctx.get("plan_code", ""),
+            "billing_cycle": gym_ctx.get("billing_cycle", ""),
+            "start_date": gym_ctx.get("start_date", ""),
+            "end_date": gym_ctx.get("end_date", ""),
         },
     )
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  STEP 3 — PAY INVOICE (atomic: payment + subscription + member)
+#  STEP 5 — PAY INVOICE (atomic: payment + subscription + member)
 # ══════════════════════════════════════════════════════════════════════
 
-@router.post("/invoices/{invoice_number}/pay")
+@router.post("/invoices/{invoice_number:path}/pay")
 async def pay_gym_invoice(
     invoice_number: str,
     request: Request,
@@ -327,9 +491,8 @@ async def pay_gym_invoice(
         2. Create the subscription record (entity_type: "subscription")
         3. Update member status → active
 
-    The subscription record is written HERE and ONLY HERE — never before
-    payment is confirmed. This enforces the invariant that a subscription
-    in the database always means a paid, active membership.
+    The member/plan context is reconstructed from the originating ORDER
+    (looked up via OrderDoc.find_by_invoice), not from the invoice itself.
 
     Expected payload:
         {
@@ -358,6 +521,7 @@ async def pay_gym_invoice(
         )
 
     from app.modules.gym.billing_service import GymBillingService
+    from app.modules.billing.documents.order_doc import OrderDoc
 
     gym_billing = GymBillingService(db, ctx)
 
@@ -370,18 +534,27 @@ async def pay_gym_invoice(
     if invoice_doc.status == "cancelled":
         bad_request(message="Cannot pay a cancelled invoice.")
 
-    # ── 2. Extract source_ref to reconstruct member + plan context ───
-    source_ref = getattr(invoice_doc, "source_ref", {}) or {}
-    member_id = source_ref.get("member_id")
-    plan_code = source_ref.get("plan_code")
-    start_date = source_ref.get("start_date")
-    end_date = source_ref.get("end_date")
-    billing_cycle = source_ref.get("billing_cycle", "monthly")
+    # ── 2. Look up originating ORDER for member/plan context ─────────
+    order_doc = await OrderDoc.find_by_invoice(ctx, invoice_number)
+    if not order_doc:
+        bad_request(
+            message=(
+                "No originating order found for this invoice. "
+                "Cannot create subscription."
+            )
+        )
+
+    gym_ctx = _parse_gym_context(order_doc.notes)
+    member_id = gym_ctx.get("member_id")
+    plan_code = gym_ctx.get("plan_code")
+    start_date = gym_ctx.get("start_date")
+    end_date = gym_ctx.get("end_date")
+    billing_cycle = gym_ctx.get("billing_cycle", "monthly")
 
     if not member_id or not plan_code:
         bad_request(
             message=(
-                "Invoice source_ref is missing member_id or plan_code. "
+                "Order context is missing member_id or plan_code. "
                 "Cannot create subscription."
             )
         )
@@ -456,12 +629,13 @@ async def pay_gym_invoice(
         "start_date": effective_start,
         "end_date": effective_end,
         "subscription_id": subscription_id,
-        # Created as active immediately — payment is already confirmed
+        # Created as active — payment is already confirmed
         "status": "active",
         "is_paid": True,
         "payment_method": payment_method,
         "payment_amount": invoice_doc.total,
         "invoice_number": invoice_number,
+        "order_number": order_doc.order_number,
         "payment_number": payment_doc.payment_number,
         "notes": data.get("notes", ""),
     }
@@ -496,6 +670,7 @@ async def pay_gym_invoice(
             "invoice_status": updated_invoice.status,
             "balance_due": updated_invoice.balance_due,
             "is_fully_paid": updated_invoice.balance_due <= 0,
+            "order_number": order_doc.order_number,
             "subscription_id": subscription_id,
             "subscription_status": "active",
             "member_id": member_id,
@@ -507,10 +682,10 @@ async def pay_gym_invoice(
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  STEP 4 — SEND PAYMENT LINK
+#  STEP 6 — SEND PAYMENT LINK
 # ══════════════════════════════════════════════════════════════════════
 
-@router.post("/invoices/{invoice_number}/send-link")
+@router.post("/invoices/{invoice_number:path}/send-link")
 async def send_gym_invoice_payment_link(
     invoice_number: str,
     request: Request,
@@ -571,10 +746,10 @@ async def send_gym_invoice_payment_link(
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  STEP 5 — CANCEL INVOICE
+#  STEP 7 — CANCEL INVOICE
 # ══════════════════════════════════════════════════════════════════════
 
-@router.post("/invoices/{invoice_number}/cancel")
+@router.post("/invoices/{invoice_number:path}/cancel")
 async def cancel_gym_invoice(
     invoice_number: str,
     ctx: OrgContext = Depends(get_org_context),
@@ -608,7 +783,7 @@ async def cancel_gym_invoice(
         bad_request(message="Invoice is already fully paid and cannot be cancelled.")
 
     billing = BillingService(db, ctx)
-    await billing.invoices.cancel(invoice_number)
+    await billing.invoices.void(invoice_number)
 
     return ok(
         message="Invoice cancelled successfully.",
