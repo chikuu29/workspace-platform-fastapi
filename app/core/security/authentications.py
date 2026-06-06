@@ -53,8 +53,7 @@ async def get_authenticated_identity(
     try:
         # 1. Validate Token (Fast JWT check)
         payload = await oauth2_client.validate_token(token=token)
-        print("Token validated, payload:", payload)
-        # payload = await _resolve_payload(payload)
+    
         request.state.user = payload
         return payload
     except HTTPException:

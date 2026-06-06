@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, Request
 from app.core.context import OrgContext, get_org_context
 from app.common.org_repository import OrgRepository
 from app.common.responses import ok, created, not_found, bad_request, conflict
-from app.db.database import get_database
+from app.core.database import get_db
 from app.db.org_sequence import OrgSequenceService
 from app.modules.gym.schemas import sanitize_payload
 from app.modules.gym.routers.constants import (
@@ -47,7 +47,7 @@ _log = logging.getLogger("app.gym.billing")
 async def create_membership_invoice(
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Create a billing invoice for a gym membership — NO subscription created.
@@ -228,7 +228,7 @@ async def create_membership_invoice(
 async def get_gym_invoice(
     invoice_number: str,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Fetch a gym membership invoice with full payment history.
@@ -317,7 +317,7 @@ async def pay_gym_invoice(
     invoice_number: str,
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Pay a gym membership invoice and atomically activate the membership.
@@ -515,7 +515,7 @@ async def send_gym_invoice_payment_link(
     invoice_number: str,
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Generate and dispatch a payment link for a gym membership invoice.
@@ -578,7 +578,7 @@ async def send_gym_invoice_payment_link(
 async def cancel_gym_invoice(
     invoice_number: str,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Cancel an unpaid gym membership invoice.
@@ -624,7 +624,7 @@ async def cancel_gym_invoice(
 async def membership_payment_webhook(
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Webhook endpoint for external payment confirmation.
@@ -703,7 +703,7 @@ async def membership_payment_webhook(
 async def get_membership_invoice(
     subscription_id: str,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Get invoice details for a subscription.

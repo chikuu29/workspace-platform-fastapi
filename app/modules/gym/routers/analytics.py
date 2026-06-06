@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends
 from app.core.context import OrgContext, get_org_context
 from app.common.org_repository import OrgRepository
 from app.common.responses import ok
-from app.db.database import get_database
+from app.core.database import get_db
 from app.modules.gym.routers.constants import (
     MEMBER_QUERY,
     PLAN_QUERY,
@@ -33,7 +33,7 @@ router = APIRouter()
 @router.get("/analytics/kpis")
 async def get_gym_kpis(
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Aggregate gym dashboard KPI data in a single backend call.
@@ -128,7 +128,7 @@ async def get_gym_kpis(
 @router.get("/analytics/subscriptions")
 async def get_subscription_analytics(
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Aggregate subscription dashboard KPIs.
@@ -209,7 +209,7 @@ async def get_subscription_analytics(
 @router.get("/analytics/attendance")
 async def get_attendance_analytics(
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Get attendance analytics: daily visits, hourly heatmap, and

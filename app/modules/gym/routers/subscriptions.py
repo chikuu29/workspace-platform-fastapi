@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, Request
 from app.core.context import OrgContext, get_org_context
 from app.common.org_repository import OrgRepository
 from app.common.responses import ok, created, not_found, bad_request, conflict
-from app.db.database import get_database
+from app.core.database import get_db
 from app.db.org_sequence import OrgSequenceService
 from app.modules.gym.schemas import sanitize_payload
 from app.modules.gym.routers.constants import (
@@ -40,7 +40,7 @@ router = APIRouter()
 async def activate_subscription(
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Activate a subscription — links a member to a subscription plan.

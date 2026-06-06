@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.core.context import OrgContext, get_org_context
 from app.common.org_repository import OrgRepository
 from app.common.responses import ok, created, paginated, deleted, not_found, bad_request, conflict
-from app.db.database import get_database
+from app.core.database import get_db
 from app.db.org_sequence import OrgSequenceService
 from app.modules.gym.schemas import sanitize_payload
 from app.modules.gym.routers.constants import (
@@ -114,7 +114,7 @@ async def _enrich_member(member: dict, repo: OrgRepository) -> dict:
 async def add_member(
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Register a new gym member.
@@ -173,7 +173,7 @@ async def get_members(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=100),
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     List gym members with subscription summaries.
@@ -208,7 +208,7 @@ async def get_members(
 async def get_member(
     identifier: str,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """Retrieve a single member with full subscription + plan details.
 
@@ -268,7 +268,7 @@ async def update_member(
     identifier: str,
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Update a member's data fields.
@@ -295,7 +295,7 @@ async def update_member(
 async def delete_member(
     identifier: str,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Soft-delete a member. Sets `_meta.is_deleted = true` with audit trail.

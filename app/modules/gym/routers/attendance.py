@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends
 from app.core.context import OrgContext, get_org_context
 from app.common.org_repository import OrgRepository
 from app.common.responses import created, not_found, bad_request
-from app.db.database import get_database
+from app.core.database import get_db
 from app.modules.gym.routers.constants import (
     ENTITY_ATTENDANCE,
     MEMBER_QUERY,
@@ -30,7 +30,7 @@ router = APIRouter()
 async def member_checkin(
     data: dict,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Record a member check-in event.

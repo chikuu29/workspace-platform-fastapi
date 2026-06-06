@@ -1,5 +1,5 @@
 from datetime import datetime
-from app.db.database import get_database
+from app.core.database import get_db
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 async def generate_monthly_sequence(org_id: str, app_id: str, form_id: str, prefix: str = "MEM") -> str:
@@ -7,7 +7,7 @@ async def generate_monthly_sequence(org_id: str, app_id: str, form_id: str, pref
     Atomically increments a sequence for a specific organization + app + form within the current month.
     Generates an ID in the format: PREFIX-YYYYMM-0001
     """
-    db: AsyncIOMotorDatabase = get_database()
+    db: AsyncIOMotorDatabase = get_db()
     
     # Get current YYYYMM (e.g. '202603')
     current_month = datetime.utcnow().strftime("%Y%m")
@@ -33,7 +33,7 @@ async def generate_simple_sequence(org_id: str, app_id: str, entity_type: str, p
     Atomically increments a simple continuous sequence for an entity.
     Generates an ID in the format: PREFIX-1, PREFIX-2
     """
-    db: AsyncIOMotorDatabase = get_database()
+    db: AsyncIOMotorDatabase = get_db()
     
     counter_id = f"{org_id}:{app_id}:{entity_type}:continuous"
     

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from app.common.responses import created, ok, paginated
 from app.core.context import OrgContext, get_org_context
 from app.core.security.authentications import get_authenticated_identity
-from app.db.database import get_database
+from app.core.database import get_db
 from app.modules.billing.services.payment_service import PaymentService
 from app.modules.billing.schemas.common import SuccessEnvelope, PaginatedEnvelope
 from app.modules.billing.schemas.payment_schemas import (
@@ -21,7 +21,7 @@ router = APIRouter(dependencies=[Depends(get_authenticated_identity)])
 
 def _get_service(
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ) -> PaymentService:
     return PaymentService(db, ctx)
 

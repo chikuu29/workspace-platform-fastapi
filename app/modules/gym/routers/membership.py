@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Request
 from app.core.context import OrgContext, get_org_context
 from app.common.org_repository import OrgRepository
 from app.common.responses import ok, created, not_found, bad_request, conflict
-from app.db.database import get_database
+from app.core.database import get_db
 from app.db.org_sequence import OrgSequenceService
 from app.modules.gym.schemas import sanitize_payload
 from app.modules.gym.routers.constants import (
@@ -46,7 +46,7 @@ router = APIRouter()
 async def enroll_membership(
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Enroll a member in a subscription plan — creates subscription + billing order.
@@ -231,7 +231,7 @@ async def collect_membership_payment(
     subscription_id: str,
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Collect payment for a membership subscription.
@@ -352,7 +352,7 @@ async def send_membership_payment_link(
     subscription_id: str,
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Generate and send a payment link for remote / later payment.

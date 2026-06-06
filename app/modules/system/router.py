@@ -99,13 +99,13 @@ async def upload_file(
 
 
 # @router.get("/getDataBaseStatisics")
-# async def get_database_statistics(
+# async def get_db_statistics(
 #     service: AppService = Depends(get_app_service),
 #     request_context: RequestContext = Depends(require_request_context),
 #     current_user: dict = Depends(get_current_user),
 # ):
 #     del request_context, current_user
-#     result = await service.get_database_statistics()
+#     result = await service.get_db_statistics()
 #     if result:
 #         return success_response(payload={"result": result})
 #     return success_response(payload={"success": False, "result": {}}, message="Success")

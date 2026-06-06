@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.core.context import OrgContext, get_org_context
 from app.common.org_repository import OrgRepository
 from app.common.responses import ok, created, paginated, deleted, not_found, bad_request, conflict
-from app.db.database import get_database
+from app.core.database import get_db
 from app.db.org_sequence import OrgSequenceService
 from app.modules.gym.schemas import sanitize_payload
 from app.modules.gym.routers.constants import (
@@ -34,7 +34,7 @@ router = APIRouter()
 async def add_trainer(
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """
     Register a new gym trainer / staff member.
@@ -88,7 +88,7 @@ async def get_trainers(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=100),
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """List all trainers in the organisation."""
     repo = OrgRepository(db, "records", ctx)
@@ -113,7 +113,7 @@ async def get_trainers(
 async def get_trainer(
     identifier: str,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """Retrieve details of a specific trainer by record_id, trainer_id, or ObjectId."""
     repo = OrgRepository(db, "records", ctx)
@@ -130,7 +130,7 @@ async def update_trainer(
     identifier: str,
     request: Request,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """Update trainer data."""
     raw = await request.json()
@@ -152,7 +152,7 @@ async def update_trainer(
 async def delete_trainer(
     identifier: str,
     ctx: OrgContext = Depends(get_org_context),
-    db=Depends(get_database),
+    db=Depends(get_db),
 ):
     """Soft-delete a trainer."""
     repo = OrgRepository(db, "records", ctx)

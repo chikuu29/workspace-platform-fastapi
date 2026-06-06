@@ -8,7 +8,7 @@ load balancers, and infrastructure monitoring.
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from app.db.database import get_database
+from app.core.database import get_db
 from app.core.logger import create_logger
 
 logger = create_logger("health")
@@ -29,7 +29,7 @@ async def health_check() -> JSONResponse:
 
     # Check MongoDB — attempt a ping on the admin database
     try:
-        db = get_database()
+        db = get_db()
         await db.client.admin.command("ping")
         health["services"]["mongodb"] = {"status": "healthy"}
     except Exception as exc:
@@ -66,7 +66,7 @@ async def readiness() -> JSONResponse:
     and receives no traffic — preventing 503s during startup or DB outages.
     """
     try:
-        db = get_database()
+        db = get_db()
         await db.client.admin.command("ping")
         return JSONResponse(status_code=200, content={"status": "ready"})
     except Exception as exc:

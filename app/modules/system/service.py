@@ -111,7 +111,7 @@ class AppService:
             {"id": 2, "info": "Class starts at 6 PM", "aName": "Gym"},
         ]
 
-    async def get_database_statistics(self) -> Dict[str, Any]:
+    async def get_db_statistics(self) -> Dict[str, Any]:
         return await self.repository.get_db_stats()
 
     async def upload_files(

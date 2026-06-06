@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.errors import ApiError
 from app.core.logger import startup_logger
 from app.core.responses import error_payload
-from app.db.database import close_mongo_connection, connect_to_mongo
+from app.core.database import close_db, connect_db
 from app.core.middlewares.loggerMiddleware import LoggerMiddleware
 from app.core.middlewares.auth_middleware import AuthMiddleware
 from app.core.middlewares.security_middleware import SecurityMiddleware
@@ -29,9 +29,9 @@ async def lifespan(app: FastAPI):
         settings.ENV,
     )
     startup_logger.debug("Loaded Settings: %s", settings.model_dump())
-    await connect_to_mongo()
+    await connect_db()
     yield
-    await close_mongo_connection()
+    await close_db()
 
 
 app = FastAPI(
