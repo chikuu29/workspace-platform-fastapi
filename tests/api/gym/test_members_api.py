@@ -12,7 +12,7 @@ async def test_add_member_success(api_client, mock_db):
     mock_db["records"].find_one = AsyncMock(return_value=None)
     
     # Pre-wire simple ID sequence
-    mock_db["sequences"].find_one_and_update = AsyncMock(return_value={"seq": 10})
+    mock_db["sequences"].find_one_and_update = AsyncMock(return_value={"seq": 10, "sequence_value": 10})
 
     # Pre-wire insert_one response
     mock_insert_result = MagicMock()

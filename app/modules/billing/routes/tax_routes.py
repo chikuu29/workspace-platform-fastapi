@@ -9,7 +9,7 @@ from app.core.context import OrgContext, get_org_context
 from app.core.security.authentications import get_authenticated_identity
 from app.core.database import get_db
 from app.modules.billing.services.tax_profile_service import TaxProfileService
-from app.modules.gym.schemas import sanitize_payload
+from app.core.utils import sanitize_payload
 
 router = APIRouter(dependencies=[Depends(get_authenticated_identity)])
 

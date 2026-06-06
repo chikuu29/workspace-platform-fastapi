@@ -5,7 +5,7 @@ tests/api/conftest.py — API test layer fixtures.
 import pytest
 from httpx import AsyncClient, ASGITransport
 from app.main import app
-from app.db.database import get_database
+from app.core.database import get_db as get_database
 from app.core.context import get_org_context
 from app.core.security.authentications import get_authenticated_identity
 

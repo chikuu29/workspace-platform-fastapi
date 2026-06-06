@@ -8,7 +8,7 @@ from app.common.responses import created, ok, paginated
 from app.core.logger import create_logger
 from app.core.security.authentications import get_authenticated_identity
 from app.modules.hostel.dependencies import get_hostel_service
-from app.modules.hostel.schemas import sanitize_payload
+from app.core.utils import sanitize_payload
 from app.modules.hostel.services import HostelService
 
 router = APIRouter(dependencies=[Depends(get_authenticated_identity)])

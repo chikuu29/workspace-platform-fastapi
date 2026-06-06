@@ -25,7 +25,7 @@ from app.common.org_repository import OrgRepository
 from app.common.responses import ok, created, not_found, bad_request, conflict
 from app.core.database import get_db
 from app.db.org_sequence import OrgSequenceService
-from app.modules.gym.schemas import sanitize_payload
+from app.core.utils import sanitize_payload
 from app.modules.gym.routers.constants import (
     ENTITY_SUBSCRIPTION,
     ALLOWED_PAYMENT_METHODS,
