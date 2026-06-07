@@ -458,18 +458,19 @@ class GymService:
             sort=[("_meta.created.at", -1)],
             limit=5,
         )
-        recent_members = [
-            {
-                "record_id": d["_meta"]["record_id"],
+        recent_members = []
+        for d in recent_docs:
+            enriched = await self._enrich_member(d)
+            recent_members.append({
+                "record_id": enriched["_meta"]["record_id"],
                 "name": (
-                    f"{d['data'].get('firstName', '')} "
-                    f"{d['data'].get('lastName', '')}"
+                    f"{enriched['data'].get('firstName', '')} "
+                    f"{enriched['data'].get('lastName', '')}"
                 ).strip() or "Unknown",
-                "plan": d["data"].get("plan", "N/A"),
-                "created_at": d["_meta"]["created"]["at"],
-            }
-            for d in recent_docs
-        ]
+                "plan": enriched["data"].get("plan", "N/A"),
+                "created_at": enriched["_meta"]["created"]["at"],
+                "status": enriched["data"].get("status", "active"),
+            })
 
         revenue_pipeline = [
             {"$match": {**self._ctx.active_filter, **SUBSCRIPTION_QUERY, "data.status": "active"}},
