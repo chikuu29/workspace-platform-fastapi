@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 
 from app.modules.gym.dependencies import get_gym_service
 from app.modules.gym.service import GymService
+from app.common.responses import ok
 
 router = APIRouter()
 
@@ -22,7 +23,7 @@ async def get_gym_kpis(
     Aggregate gym dashboard KPI data in a single backend call.
     """
     res = await service.get_kpis()
-    return res
+    return ok(data=res,message="Gym KPI analytics")
 
 
 # ══════════════════════════════════════════════════════════════════════
