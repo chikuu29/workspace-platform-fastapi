@@ -174,6 +174,7 @@ class GymService:
         if not doc:
             not_found(message=f"Member '{identifier}' not found.")
 
+       
         doc = await self._enrich_member(doc)
 
         member_id = doc["data"].get("member_id")
