@@ -110,7 +110,7 @@ class ReceiptService(BaseBillingService):
         doc = ReceiptDoc.create_for_org(
             self._ctx,
             entity_type=ENTITY_RECEIPT,
-            record_id=receipt_number,
+            id=receipt_number,
             receipt_number=receipt_number,
             invoice_ref=invoice.invoice_number,
             order_ref=order_ref,

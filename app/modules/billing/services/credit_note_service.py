@@ -137,7 +137,7 @@ class CreditNoteService(BaseBillingService):
         doc = CreditNoteDoc.create_for_org(
             self._ctx,
             entity_type=ENTITY_CREDIT_NOTE,
-            record_id=cn_number,
+            id=cn_number,
             credit_note_number=cn_number,
             invoice_ref=invoice_ref,
             reason=input_data.reason,

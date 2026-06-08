@@ -186,12 +186,12 @@ class GymRepository(OrgRepository):
     # ── Subscriptions ────────────────────────────────────────────────────
 
     async def get_subscription(self, subscription_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve subscription by subscription_id or record_id."""
+        """Retrieve subscription by subscription_id or id."""
         return await self.find_one({
             **SUBSCRIPTION_QUERY,
             "$or": [
                 {"data.subscription_id": subscription_id},
-                {"_meta.record_id": subscription_id},
+                {"_meta.id": subscription_id},
             ],
         })
 

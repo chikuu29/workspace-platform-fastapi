@@ -70,7 +70,7 @@ class AuditInfoResponse(BaseModel):
     Lets the frontend show who created/updated the document and when.
     """
 
-    record_id: str
+    id: str
     version: int
     created_at: datetime
     created_by: str

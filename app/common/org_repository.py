@@ -124,26 +124,26 @@ class OrgRepository:
         prefix: str = "REC",
     ) -> Dict[str, Any]:
         """
-        Insert a document with automatic `_org`, `_meta`, and `record_id`.
+        Insert a document with automatic `_org`, `_meta`, and `id`.
 
-        The record_id is auto-generated via OrgSequenceService — callers
+        The id is auto-generated via OrgSequenceService — callers
         never need to call sequence manually.
 
         Args:
             data: The business data (stored under the `data` key).
             entity_type: Logical entity type (e.g. "member", "plan", "invoice").
-            prefix: Prefix for the auto-generated record_id (e.g. "GYM" → GYM-202604-0001).
+            prefix: Prefix for the auto-generated id (e.g. "GYM" → GYM-202604-0001).
 
         Returns:
-            The inserted document with stringified _id and generated record_id.
+            The inserted document with stringified _id and generated id.
         """
-        # Auto-generate record_id — no manual call needed
+        # Auto-generate id — no manual call needed
         seq = OrgSequenceService(self._db, self._ctx)
-        record_id = await seq.monthly(entity_type, prefix=prefix)
+        id = await seq.monthly(entity_type, prefix=prefix)
 
         document = {
             "_org": self._ctx.to_org_block(),
-            "_meta": self._ctx.to_created_meta(entity_type, record_id),
+            "_meta": self._ctx.to_created_meta(entity_type, id),
             "data": data,
         }
 
@@ -152,9 +152,9 @@ class OrgRepository:
         document["_id"] = str(result.inserted_id)
 
         logger.info(
-            "Inserted %s record_id=%s org=%s by=%s",
+            "Inserted %s id=%s org=%s by=%s",
             entity_type,
-            record_id,
+            id,
             self._ctx.org_id,
             self._ctx.user_id,
         )

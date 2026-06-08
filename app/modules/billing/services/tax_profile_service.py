@@ -83,7 +83,7 @@ class TaxProfileService(BaseBillingService):
         doc = TaxProfileDoc.create_for_org(
             self._ctx,
             entity_type=ENTITY_TAX_PROFILE,
-            record_id=f"TAX-{gstin[-4:]}",
+            id=f"TAX-{gstin[-4:]}",
             profile_name=data.get("profile_name", ""),
             gstin=gstin,
             legal_name=data.get("legal_name", ""),

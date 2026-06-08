@@ -45,14 +45,14 @@ ALLOWED_PAYMENT_METHODS = {"cash", "upi", "card", "net_banking", "bank_transfer"
 # ── Query Builder Helpers ─────────────────────────────────────────────
 
 def _record_query(identifier: str) -> dict:
-    """Build a flexible lookup query by record_id, member_id, or ObjectId.
+    """Build a flexible lookup query by id, member_id, or ObjectId.
 
     Accepts any of the three identifiers so callers never need to know
     which format the client supplied.
     """
     query: dict = {
         "$or": [
-            {"_meta.record_id": identifier},
+            {"_meta.id": identifier},
             {"data.member_id": identifier},
         ]
     }
@@ -62,10 +62,10 @@ def _record_query(identifier: str) -> dict:
 
 
 def _plan_query(identifier: str) -> dict:
-    """Build a flexible lookup query for plans by record_id, code, or ObjectId."""
+    """Build a flexible lookup query for plans by id, code, or ObjectId."""
     query: dict = {
         "$or": [
-            {"_meta.record_id": identifier},
+            {"_meta.id": identifier},
             {"data.code": identifier},
         ]
     }
@@ -75,10 +75,10 @@ def _plan_query(identifier: str) -> dict:
 
 
 def _trainer_query(identifier: str) -> dict:
-    """Build a flexible lookup query for trainers by record_id, trainer_id, or ObjectId."""
+    """Build a flexible lookup query for trainers by id, trainer_id, or ObjectId."""
     query: dict = {
         "$or": [
-            {"_meta.record_id": identifier},
+            {"_meta.id": identifier},
             {"data.trainer_id": identifier},
         ]
     }

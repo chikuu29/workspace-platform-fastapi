@@ -232,7 +232,7 @@ def map_invoice_doc_to_response(doc: InvoiceDoc) -> InvoiceResponse:
         notes=doc.notes or "",
         terms_and_conditions=doc.terms_and_conditions or "",
         audit=AuditInfoResponse(
-            record_id=doc.meta_info.record_id,
+            id=doc.meta_info.id,
             version=doc.meta_info.version,
             created_at=doc.meta_info.created.at,
             created_by=doc.meta_info.created.by,

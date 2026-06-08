@@ -81,7 +81,7 @@ async def activate_subscription(
         **MEMBER_QUERY,
         "$or": [
             {"data.member_id": member_id},
-            {"_meta.record_id": member_id},
+            {"_meta.id": member_id},
         ],
     })
     if not member_doc:
@@ -107,7 +107,7 @@ async def activate_subscription(
             message=f"Member '{member_id}' already has an active subscription.",
             error_code="ACTIVE_SUBSCRIPTION_EXISTS",
             details={
-                "existing_subscription_id": existing_sub["_meta"]["record_id"],
+                "existing_subscription_id": existing_sub["_meta"]["id"],
                 "existing_plan": existing_sub["data"].get("plan_name"),
             },
         )
@@ -204,7 +204,7 @@ async def activate_subscription(
         "member_name": member_name,
         "plan_code": plan_code,
         "plan_name": plan_data.get("name", ""),
-        "plan_record_id": plan_doc["_meta"]["record_id"],
+        "plan_id": plan_doc["_meta"]["id"],
         "price": plan_data.get("price", 0),
         "currency": plan_data.get("currency", "INR"),
         "billing_cycle": billing_cycle,

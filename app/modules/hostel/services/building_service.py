@@ -37,7 +37,7 @@ class HostelBuildingService(BaseHostelService):
             location = doc["data"].get("location", "")
             options.append(
                 {
-                    "id": doc["_meta"]["record_id"],
+                    "id": doc["_meta"]["id"],
                     "name": f"{name} ({location})" if location else name,
                 }
             )

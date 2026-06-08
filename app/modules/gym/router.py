@@ -35,6 +35,7 @@ from app.modules.gym.routers import (
     invoices,
     trainers,
     attendance,
+    checkout,
 )
 
 # Auth dependency applied once here — every sub-router inherits it.
@@ -51,3 +52,4 @@ router.include_router(membership.router)
 router.include_router(invoices.router)
 router.include_router(trainers.router)
 router.include_router(attendance.router)
+router.include_router(checkout.router)

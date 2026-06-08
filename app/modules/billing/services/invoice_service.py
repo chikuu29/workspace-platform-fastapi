@@ -202,7 +202,7 @@ class InvoiceService(BaseBillingService):
         doc = InvoiceDoc.create_for_org(
             self._ctx,
             entity_type=ENTITY_INVOICE,
-            record_id=invoice_number,
+            id=invoice_number,
             invoice_number=invoice_number,
             invoice_type=input_data.invoice_type,
             customer_ref=CustomerRefEmbed(
@@ -275,7 +275,7 @@ class InvoiceService(BaseBillingService):
         doc = InvoiceDoc.create_for_org(
             self._ctx,
             entity_type=ENTITY_INVOICE,
-            record_id=invoice_number,
+            id=invoice_number,
             invoice_number=invoice_number,
             invoice_type="standard",
             customer_ref=order_doc.customer_ref,

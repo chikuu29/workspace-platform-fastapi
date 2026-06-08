@@ -56,7 +56,7 @@ async def get_trainer(
     identifier: str,
     service: GymService = Depends(get_gym_service),
 ):
-    """Retrieve details of a specific trainer by record_id, trainer_id, or ObjectId."""
+    """Retrieve details of a specific trainer by id, trainer_id, or ObjectId."""
     doc = await service.get_trainer(identifier)
     return ok(message="Trainer retrieved.", data=doc)
 

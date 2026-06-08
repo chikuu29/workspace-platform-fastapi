@@ -85,7 +85,7 @@ async def enroll_membership(
         **MEMBER_QUERY,
         "$or": [
             {"data.member_id": member_id},
-            {"_meta.record_id": member_id},
+            {"_meta.id": member_id},
         ],
     })
     if not member_doc:
@@ -163,7 +163,7 @@ async def enroll_membership(
         "member_name": member_name,
         "plan_code": plan_code,
         "plan_name": plan_data.get("name", ""),
-        "plan_record_id": plan_doc["_meta"]["record_id"],
+        "plan_id": plan_doc["_meta"]["id"],
         "price": plan_data.get("price", 0),
         "currency": plan_data.get("currency", "INR"),
         "billing_cycle": billing_cycle,
@@ -275,7 +275,7 @@ async def collect_membership_payment(
         **SUBSCRIPTION_QUERY,
         "$or": [
             {"data.subscription_id": subscription_id},
-            {"_meta.record_id": subscription_id},
+            {"_meta.id": subscription_id},
         ],
     })
     if not sub_doc:
@@ -375,7 +375,7 @@ async def send_membership_payment_link(
         **SUBSCRIPTION_QUERY,
         "$or": [
             {"data.subscription_id": subscription_id},
-            {"_meta.record_id": subscription_id},
+            {"_meta.id": subscription_id},
         ],
     })
     if not sub_doc:

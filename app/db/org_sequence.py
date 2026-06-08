@@ -28,8 +28,8 @@ ID Format Design (multi-tenant + multi-app safe):
 
 Usage:
     seq = OrgSequenceService(db, ctx)
-    record_id = await seq.monthly("member", prefix="MYGYM")      # MYGYM-MBR-202605-0001
-    record_id = await seq.monthly("subscription_plan", prefix="MYGYM")  # MYGYM-PLN-202605-0001
+    id = await seq.monthly("member", prefix="MYGYM")      # MYGYM-MBR-202605-0001
+    id = await seq.monthly("subscription_plan", prefix="MYGYM")  # MYGYM-PLN-202605-0001
     member_id = await seq.simple("member", prefix="M")            # M-1
 """
 

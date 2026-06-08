@@ -138,10 +138,10 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
         background=True,
     )
 
-    # Unique record_id per org (prevents duplicate sequence IDs)
+    # Unique id per org (prevents duplicate sequence IDs)
     await records.create_index(
-        [("_org.org_id", 1), ("_meta.record_id", 1)],
-        name="idx_org_record_id",
+        [("_org.org_id", 1), ("_meta.id", 1)],
+        name="idx_org_id",
         unique=True,
         background=True,
     )

@@ -17,5 +17,5 @@ def occupant_reference(guest_id: str, guest_doc: Dict[str, Any]) -> Dict[str, An
     return {
         "guest_id": guest_id,
         
-        "record_id": guest_doc["_meta"]["record_id"],
+        "id": guest_doc["_meta"]["id"],
     }

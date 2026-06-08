@@ -59,7 +59,7 @@ async def get_plan(
     identifier: str,
     service: GymService = Depends(get_gym_service),
 ):
-    """Retrieve a single subscription plan by record_id, code, or ObjectId."""
+    """Retrieve a single subscription plan by id, code, or ObjectId."""
     doc = await service.get_plan(identifier)
     return ok(message="Plan retrieved.", data=doc)
 

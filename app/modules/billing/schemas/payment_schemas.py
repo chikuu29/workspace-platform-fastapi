@@ -138,7 +138,7 @@ def map_payment_doc_to_response(doc: PaymentDoc) -> PaymentResponse:
         commission_amount=doc.commission_amount,
         net_to_owner=doc.net_to_owner,
         audit=AuditInfoResponse(
-            record_id=doc.meta_info.record_id,
+            id=doc.meta_info.id,
             version=doc.meta_info.version,
             created_at=doc.meta_info.created.at,
             created_by=doc.meta_info.created.by,

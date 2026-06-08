@@ -26,7 +26,7 @@ class HostelRoomService(BaseHostelService):
         if not building_doc:
             not_found(message=f"Building block '{building_id}' not found.")
 
-        normalized_building_id = building_doc["_meta"]["record_id"]
+        normalized_building_id = building_doc["_meta"]["id"]
         building_name = building_doc["data"].get("name", "Unnamed Building")
         existing = await self.repositories.rooms.find_in_building(
             normalized_building_id,

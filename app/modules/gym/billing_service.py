@@ -121,6 +121,8 @@ class GymBillingService:
         start_date: str,
         end_date: str,
         notes: str = "",
+        discount_type: str = "none",
+        discount_value: float = 0.0,
     ) -> Any:
         """
         Create a billing ORDER for a gym membership enrollment.
@@ -138,6 +140,8 @@ class GymBillingService:
             start_date: Subscription start date (ISO format).
             end_date: Subscription end date (ISO format).
             notes: Optional notes for the order.
+            discount_type: Optional discount type ("none", "percentage", "fixed").
+            discount_value: Optional discount value.
 
         Returns:
             OrderDoc from billing service with computed tax and totals.
@@ -176,6 +180,8 @@ class GymBillingService:
                     source_item_code=plan_code,
                     service_period_start=start_date,
                     service_period_end=end_date,
+                    discount_type=discount_type,
+                    discount_value=discount_value,
                 )
             ],
             seller_gstin=seller_gstin,
@@ -334,7 +340,7 @@ class GymBillingService:
             **SUBSCRIPTION_QUERY,
             "$or": [
                 {"data.subscription_id": subscription_id},
-                {"_meta.record_id": subscription_id},
+                {"_meta.id": subscription_id},
             ],
         })
         if not sub_doc:

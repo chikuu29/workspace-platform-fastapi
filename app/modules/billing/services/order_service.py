@@ -190,7 +190,7 @@ class OrderService(BaseBillingService):
         doc = OrderDoc.create_for_org(
             self._ctx,
             entity_type=ENTITY_ORDER,
-            record_id=order_number,
+            id=order_number,
             order_number=order_number,
             customer_ref=customer_ref,
             source_ref=source_ref,

@@ -112,7 +112,7 @@ class PaymentService(BaseBillingService):
         doc = PaymentDoc.create_for_org(
             self._ctx,
             entity_type=ENTITY_PAYMENT,
-            record_id=payment_number,
+            id=payment_number,
             payment_number=payment_number,
             invoice_ref=invoice_ref,
             amount=amount,

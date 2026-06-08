@@ -15,7 +15,7 @@ Usage:
     count    = await InvoiceDoc.org_count(ctx, {"status": "paid"})
 
     # Insert auto-stamps _org + _meta:
-    doc = InvoiceDoc.create_for_org(ctx, entity_type="...", record_id="...", **fields)
+    doc = InvoiceDoc.create_for_org(ctx, entity_type="...", id="...", **fields)
     await doc.insert()
 
     # Update auto-stamps audit trail:
@@ -74,7 +74,7 @@ class MetaBlock(BaseModel):
     """
 
     entity_type: str = ""
-    record_id: str = ""
+    id: str = ""
     version: int = 1
     is_deleted: bool = False
     created: AuditStamp = Field(default_factory=AuditStamp)
@@ -136,7 +136,7 @@ class BillingDocument(Document):
         ctx: OrgContext,
         *,
         entity_type: str,
-        record_id: str,
+        id: str,
         **kwargs: Any,
     ) -> T:
         """
@@ -149,7 +149,7 @@ class BillingDocument(Document):
         Args:
             ctx: Current request's org context (from JWT + headers).
             entity_type: Logical entity type (e.g. "invoice").
-            record_id: Auto-generated record ID (from OrgSequenceService).
+            id: Auto-generated record ID (from OrgSequenceService).
             **kwargs: Business fields for the document subclass.
 
         Returns:
@@ -166,7 +166,7 @@ class BillingDocument(Document):
                 ),
                 "_meta": MetaBlock(
                     entity_type=entity_type,
-                    record_id=record_id,
+                    id=id,
                     created=AuditStamp(by=ctx.user_id),
                 ),
                 **kwargs,
@@ -258,9 +258,9 @@ class BillingDocument(Document):
         self.meta_info.version += 1
         await self.save()
         logger.info(
-            "Updated %s record_id=%s org=%s by=%s",
+            "Updated %s id=%s org=%s by=%s",
             self.meta_info.entity_type,
-            self.meta_info.record_id,
+            self.meta_info.id,
             self.org.org_id,
             ctx.user_id,
         )
@@ -278,9 +278,9 @@ class BillingDocument(Document):
         self.meta_info.version += 1
         await self.save()
         logger.info(
-            "Soft-deleted %s record_id=%s org=%s by=%s",
+            "Soft-deleted %s id=%s org=%s by=%s",
             self.meta_info.entity_type,
-            self.meta_info.record_id,
+            self.meta_info.id,
             self.org.org_id,
             ctx.user_id,
         )

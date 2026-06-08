@@ -132,7 +132,7 @@ class GymService:
                 error_code="DUPLICATE_MEMBER",
                 details={
                     "existing_member_id": existing["data"].get("member_id"),
-                    "existing_record_id": existing["_meta"]["record_id"],
+                    "existing_id": existing["_meta"]["id"],
                 },
             )
 
@@ -148,7 +148,7 @@ class GymService:
                 prefix=self._ctx.app_code.upper(),
             )
             return {
-                "record_id": document["_meta"]["record_id"],
+                "id": document["_meta"]["id"],
                 "member_id": member_id,
             }
         except Exception as e:
@@ -249,7 +249,7 @@ class GymService:
             conflict(
                 message=f"A plan with code '{data['code']}' already exists.",
                 error_code="DUPLICATE_PLAN_CODE",
-                details={"existing_record_id": existing["_meta"]["record_id"]},
+                details={"existing_id": existing["_meta"]["id"]},
             )
 
         data.setdefault("currency", "INR")
@@ -341,7 +341,7 @@ class GymService:
                 prefix=self._ctx.app_code.upper(),
             )
             return {
-                "record_id": document["_meta"]["record_id"],
+                "id": document["_meta"]["id"],
                 "trainer_id": trainer_id,
             }
         except Exception as e:
@@ -462,7 +462,7 @@ class GymService:
         for d in recent_docs:
             enriched = await self._enrich_member(d)
             recent_members.append({
-                "record_id": enriched["_meta"]["record_id"],
+                "id": enriched["_meta"]["id"],
                 "name": (
                     f"{enriched['data'].get('firstName', '')} "
                     f"{enriched['data'].get('lastName', '')}"

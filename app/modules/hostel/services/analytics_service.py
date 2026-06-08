@@ -62,7 +62,7 @@ class HostelAnalyticsService(BaseHostelService):
         )
         recent_guests = [
             {
-                "record_id": doc["_meta"]["record_id"],
+                "id": doc["_meta"]["id"],
                 "name": full_name(doc["data"]),
                 "room_number": doc["data"].get("room_number", "N/A"),
                 "created_at": doc["_meta"]["created"]["at"],

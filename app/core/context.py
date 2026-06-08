@@ -74,12 +74,12 @@ class OrgContext:
             "app_name": self.app_name,
         }
 
-    def to_created_meta(self, entity_type: str, record_id: str) -> Dict[str, Any]:
+    def to_created_meta(self, entity_type: str, id: str) -> Dict[str, Any]:
         """Generates the `_meta` block for a new document."""
         now = datetime.now(timezone.utc)
         return {
             "entity_type": entity_type,
-            "record_id": record_id,
+            "id": id,
             "version": 1,
             "is_deleted": False,
             "created": {"at": now, "by": self.user_id},

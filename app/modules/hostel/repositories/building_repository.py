@@ -16,7 +16,7 @@ class BuildingRepository(HostelEntityRepository):
         return await self.find_entity(
             {
                 "$or": [
-                    {"_meta.record_id": identifier},
+                    {"_meta.id": identifier},
                     {"data.name": identifier},
                 ]
             }
