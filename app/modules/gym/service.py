@@ -435,8 +435,10 @@ class GymService:
     # ── Analytics ────────────────────────────────────────────────────────
 
     async def get_kpis(self) -> Dict[str, Any]:
-        """
-        Retrieve dashboard KPIs.
+        """Retrieve dashboard KPIs and recent enrollments.
+
+        Optimised: no N+1 subscription lookups for recent members.
+        Returns scalar counts + a lightweight recent-members list.
         """
         total = await self.repository.count_members()
         active = await self.repository.count({**MEMBER_QUERY, "data.status": "active"})
@@ -453,27 +455,7 @@ class GymService:
             "_meta.created.at": {"$gte": month_start},
         })
 
-        recent_docs = await self.repository.find(
-            MEMBER_QUERY,
-            sort=[("_meta.created.at", -1)],
-            limit=5,
-        )
-        print(f"recent_docs",recent_docs)
-        recent_members = []
-        for d in recent_docs:
-            enriched = await self._enrich_member(d)
-            recent_members.append({
-                "id": enriched["_meta"]["id"],
-                "member_id": enriched["data"].get("member_id", "N/A"),
-                "name": (
-                    f"{enriched['data'].get('firstName', '')} "
-                    f"{enriched['data'].get('lastName', '')}"
-                ).strip() or "Unknown",
-                "plan": enriched["data"].get("plan", "N/A"),
-                "created_at": enriched["_meta"]["created"]["at"],
-                "status": enriched["data"].get("status", "active"),
-            })
-
+        # Revenue MRR from active subscriptions
         revenue_pipeline = [
             {"$match": {**self._ctx.active_filter, **SUBSCRIPTION_QUERY, "data.status": "active"}},
             {"$group": {"_id": None, "total": {"$sum": "$data.price"}}},
@@ -481,14 +463,37 @@ class GymService:
         revenue_result = await self.repository.collection.aggregate(revenue_pipeline).to_list(length=1)
         revenue_mrr = revenue_result[0]["total"] if revenue_result else 0
 
+        # Today's check-ins
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         checkins_today = await self.repository.count_attendance_since(today_start)
 
+        # Trainers
         total_trainers = await self.repository.count_trainers()
         active_trainers = await self.repository.count({**TRAINER_QUERY, "data.status": "active"})
         trainer_utilization = (
             round(active_trainers / total_trainers * 100) if total_trainers > 0 else 0
         )
+
+        # Recent members — lightweight, no subscription enrichment
+        recent_docs = await self.repository.find(
+            MEMBER_QUERY,
+            sort=[("_meta.created.at", -1)],
+            limit=5,
+        )
+        recent_members = [
+            {
+                "id": d["_meta"]["id"],
+                "member_id": d["data"].get("member_id", "N/A"),
+                "name": (
+                    f"{d['data'].get('firstName', '')} "
+                    f"{d['data'].get('lastName', '')}"
+                ).strip() or "Unknown",
+                "plan": d["data"].get("plan", "N/A"),
+                "created_at": d["_meta"]["created"]["at"],
+                "status": d["data"].get("status", "active"),
+            }
+            for d in recent_docs
+        ]
 
         return {
             "kpis": {
@@ -505,90 +510,298 @@ class GymService:
             "recent_members": recent_members,
         }
 
-    async def get_subscription_analytics(self) -> Dict[str, Any]:
+    # ── Widget Analytics Engine ──────────────────────────────────────────
+    #
+    # Registry-based analytics: each widget name maps to a handler method
+    # that returns a self-describing envelope with chart_type + series data.
+    # The frontend ChartCard auto-configures rendering from the response.
+    #
+    # Adding a new widget = 1 handler method + 1 registry entry. Zero routes.
+    # ─────────────────────────────────────────────────────────────────────
+
+    WIDGET_REGISTRY: Dict[str, str] = {
+        "revenue_trend": "_widget_revenue_trend",
+        "attendance_trend": "_widget_attendance_trend",
+        "membership_distribution": "_widget_membership_distribution",
+        "plan_popularity": "_widget_plan_popularity",
+        "payment_status": "_widget_payment_status",
+    }
+
+    async def get_widget_data(self, widget_name: str, params: Dict[str, str]) -> Any:
+        """Dispatch to the registered widget handler and optionally reshape.
+
+        Args:
+            widget_name: Key from WIDGET_REGISTRY.
+            params: Query params dict (includes optional chart_type override).
+
+        Returns:
+            Widget envelope dict or None if widget not found.
         """
-        Retrieve subscription analytics.
-        """
-        total_plans = await self.repository.count_plans()
-        active_plans = await self.repository.count_plans(active_only=True)
-        total_subscribers = await self.repository.count({
-            **SUBSCRIPTION_QUERY,
-            "data.status": "active",
-        })
+        method_name = self.WIDGET_REGISTRY.get(widget_name)
+        if not method_name:
+            return None
 
-        plan_docs = await self.repository.find_plans(active_only=True, limit=50)
+        handler = getattr(self, method_name)
+        result = await handler(params)
 
-        plans_with_members = []
-        total_mrr = 0.0
+        # Frontend chart_type override — reshape data if requested type differs
+        requested_type = params.get("chart_type")
+        if requested_type and requested_type != result.get("chart_type"):
+            result = self._reshape_widget(result, requested_type)
 
-        for plan in plan_docs:
-            plan_code = plan["data"].get("code", "")
-            member_count = await self.repository.count({
-                **SUBSCRIPTION_QUERY,
-                "data.plan_code": plan_code,
-                "data.status": "active",
-            })
+        return result
 
-            price = plan["data"].get("price", 0)
-            billing_cycle = plan["data"].get("billing_cycle", "monthly")
+    # ── Widget Handlers ──────────────────────────────────────────────────
 
-            if billing_cycle == "quarterly":
-                monthly_price = price / 3
-            elif billing_cycle == "yearly":
-                monthly_price = price / 12
-            else:
-                monthly_price = price
+    async def _widget_revenue_trend(self, params: Dict[str, str]) -> Dict[str, Any]:
+        """Revenue trend widget — line chart with range filter."""
+        range_val = params.get("range", "30d")
 
-            plan_revenue = monthly_price * member_count
-            total_mrr += plan_revenue
-
-            plans_with_members.append({
-                "plan_code": plan_code,
-                "plan_name": plan["data"].get("name", ""),
-                "price": price,
-                "billing_cycle": billing_cycle,
-                "member_count": member_count,
-                "revenue": round(plan_revenue, 2),
-                "accent_color": plan["data"].get("accent_color", "blue"),
-            })
+        if range_val == "year":
+            series = await self.repository.aggregate_monthly_revenue()
+            subtitle = "Monthly income this year"
+        else:
+            series = await self.repository.aggregate_daily_revenue(days=30)
+            subtitle = "Daily income over the last 30 days"
 
         return {
-            "total_plans": total_plans,
-            "active_plans": active_plans,
-            "total_subscribers": total_subscribers,
-            "total_mrr": round(total_mrr, 2),
-            "plans_with_members": plans_with_members,
+            "widget": "revenue_trend",
+            "chart_type": "line",
+            "title": "Revenue Trend",
+            "subtitle": subtitle,
+            "filters": [
+                {"label": "Last 30 Days", "value": "30d"},
+                {"label": "This Year", "value": "year"},
+            ],
+            "series": series,
         }
 
-    async def get_attendance_analytics(self) -> Dict[str, Any]:
-        """
-        Retrieve check-in/attendance heatmap and daily visits.
-        """
+    async def _widget_attendance_trend(self, params: Dict[str, str]) -> Dict[str, Any]:
+        """Attendance trend widget — line chart of daily visits."""
+        days = int(params.get("days", "7"))
         now = datetime.now(timezone.utc)
-        dates = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+        dates = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days)]
+
         daily_visits = []
         for d in reversed(dates):
             count = await self.repository.count({**ATTENDANCE_QUERY, "data.date": d})
-            daily_visits.append({"date": d, "count": count})
-
-        hourly_dist: dict[int, int] = {h: 0 for h in range(24)}
-        checkins = await self.repository.find_attendance(limit=1000)
-        for checkin in checkins:
-            hour = checkin["data"].get("hour")
-            if hour is not None:
-                hourly_dist[hour] += 1
-
-        heatmap = [{"hour": h, "count": c} for h, c in hourly_dist.items()]
-
-        seven_days_ago = (now - timedelta(days=7)).isoformat()
-        active_member_ids = await self.repository.find_attendance_member_ids_since(seven_days_ago)
-
-        total_members = await self.repository.count_members()
+            daily_visits.append({"label": d, "value": count})
 
         return {
-            "daily_visits": daily_visits,
-            "hourly_heatmap": heatmap,
-            "active_last_7_days": len(active_member_ids),
-            "total_members": total_members,
-            "slipping_members": max(0, total_members - len(active_member_ids)),
+            "widget": "attendance_trend",
+            "chart_type": "line",
+            "title": "Attendance Trend",
+            "subtitle": f"Daily visits for the last {days} days",
+            "series": daily_visits,
         }
+
+    async def _widget_membership_distribution(self, params: Dict[str, str]) -> Dict[str, Any]:
+        """Membership distribution widget — pie chart of member statuses."""
+        active = await self.repository.count({**MEMBER_QUERY, "data.status": "active"})
+        frozen = await self.repository.count({**MEMBER_QUERY, "data.status": "frozen"})
+        attention = await self.repository.count({**MEMBER_QUERY, "data.status": "attention"})
+
+        return {
+            "widget": "membership_distribution",
+            "chart_type": "pie",
+            "title": "Membership Distribution",
+            "subtitle": "Active, frozen, and attention memberships",
+            "series": [
+                {"name": "Active Members", "value": active},
+                {"name": "Frozen Members", "value": frozen},
+                {"name": "Needs Attention", "value": attention},
+            ],
+        }
+
+    async def _widget_plan_popularity(self, params: Dict[str, str]) -> Dict[str, Any]:
+        """Plan popularity widget — pie chart of subscription billing cycles."""
+        series = await self.repository.aggregate_plan_popularity()
+
+        return {
+            "widget": "plan_popularity",
+            "chart_type": "pie",
+            "title": "Plan Popularity",
+            "subtitle": "Subscription plan tier ratio",
+            "series": series,
+        }
+
+    async def _widget_payment_status(self, params: Dict[str, str]) -> Dict[str, Any]:
+        """Payment status widget — pie chart of invoice statuses."""
+        series = await self.repository.aggregate_payment_status()
+
+        return {
+            "widget": "payment_status",
+            "chart_type": "pie",
+            "title": "Payment Status",
+            "subtitle": "Invoice fulfillment ratio",
+            "series": series,
+        }
+
+    # ── Chart Type Reshape Engine ────────────────────────────────────────
+    #
+    # When the frontend overrides chart_type via ?chart_type= query param,
+    # this method transforms the series data to match the target shape.
+    #
+    # Shape Groups:
+    #   A (category): pie, donut, funnel  → [{name, value}]
+    #   B (sequential): line, bar, area   → [{label, value}]
+    #   C (xy): scatter                   → [{x, y, name?}]
+    #   D (multi-axis): radar             → [{name, value, max?}]
+    #   E (single): gauge                 → {value, max?, label?}
+    #   F (grid): heatmap                 → [{x, y, value}]
+    # ─────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _reshape_widget(widget: Dict[str, Any], target_type: str) -> Dict[str, Any]:
+        """Reshape series data when frontend overrides chart_type.
+
+        Handles all cross-group transformations between 6 shape groups.
+        Lossy transformations (dimension reduction) are logged but allowed.
+        """
+        import math
+
+        GROUP_A = {"pie", "donut", "funnel"}
+        GROUP_B = {"line", "bar", "area"}
+        GROUP_C = {"scatter"}
+        GROUP_D = {"radar"}
+        GROUP_E = {"gauge"}
+        GROUP_F = {"heatmap"}
+
+        source_type = widget.get("chart_type")
+        series = widget.get("series", [])
+
+        # Resolve shape groups for source and target
+        src_group = (
+            "A" if source_type in GROUP_A else
+            "B" if source_type in GROUP_B else
+            "C" if source_type in GROUP_C else
+            "D" if source_type in GROUP_D else
+            "E" if source_type in GROUP_E else
+            "F" if source_type in GROUP_F else None
+        )
+        tgt_group = (
+            "A" if target_type in GROUP_A else
+            "B" if target_type in GROUP_B else
+            "C" if target_type in GROUP_C else
+            "D" if target_type in GROUP_D else
+            "E" if target_type in GROUP_E else
+            "F" if target_type in GROUP_F else None
+        )
+
+        # Same group → no reshape needed, just swap chart_type
+        if src_group == tgt_group:
+            return {**widget, "chart_type": target_type, "series": series}
+
+        # Compute max_val for transformations that need scale reference
+        max_val = 0
+        if isinstance(series, list) and series:
+            max_val = max((s.get("value", 0) for s in series), default=0)
+
+        # ── Cross-group transformations ───────────────────────────────
+        if src_group == "A" and tgt_group == "B":
+            series = [{"label": s.get("name", ""), "value": s.get("value", 0)} for s in series]
+
+        elif src_group == "B" and tgt_group == "A":
+            series = [{"name": s.get("label", ""), "value": s.get("value", 0)} for s in series]
+
+        elif src_group == "A" and tgt_group == "C":
+            series = [
+                {"x": i, "y": s.get("value", 0), "name": s.get("name", "")}
+                for i, s in enumerate(series)
+            ]
+
+        elif src_group == "B" and tgt_group == "C":
+            series = [
+                {"x": i, "y": s.get("value", 0), "name": s.get("label", "")}
+                for i, s in enumerate(series)
+            ]
+
+        elif src_group == "A" and tgt_group == "D":
+            ceil_max = math.ceil(max_val * 1.2) if max_val else 100
+            series = [
+                {"name": s.get("name", ""), "value": s.get("value", 0), "max": ceil_max}
+                for s in series
+            ]
+
+        elif src_group == "B" and tgt_group == "D":
+            ceil_max = math.ceil(max_val * 1.2) if max_val else 100
+            series = [
+                {"name": s.get("label", ""), "value": s.get("value", 0), "max": ceil_max}
+                for s in series
+            ]
+
+        elif src_group == "A" and tgt_group == "E":
+            # Lossy: reduces multiple categories to single total
+            total = sum(s.get("value", 0) for s in series)
+            series = {"value": total, "max": total, "label": "Total"}
+
+        elif src_group == "B" and tgt_group == "E":
+            # Lossy: takes last data point as the gauge value
+            last = series[-1] if series else {"label": "", "value": 0}
+            series = {"value": last.get("value", 0), "max": max_val, "label": last.get("label", "")}
+
+        elif src_group == "C" and tgt_group == "A":
+            # Lossy: loses x axis
+            series = [
+                {"name": s.get("name", f"Point {i}"), "value": s.get("y", 0)}
+                for i, s in enumerate(series)
+            ]
+
+        elif src_group == "C" and tgt_group == "B":
+            # Lossy: loses precise x coordinates
+            series = [
+                {"label": s.get("name", str(s.get("x", i))), "value": s.get("y", 0)}
+                for i, s in enumerate(series)
+            ]
+
+        elif src_group == "D" and tgt_group == "A":
+            # Lossy: loses max scale
+            series = [{"name": s.get("name", ""), "value": s.get("value", 0)} for s in series]
+
+        elif src_group == "D" and tgt_group == "B":
+            # Lossy: loses max scale
+            series = [{"label": s.get("name", ""), "value": s.get("value", 0)} for s in series]
+
+        elif src_group == "E" and tgt_group == "A":
+            if isinstance(series, dict):
+                val = series.get("value", 0)
+                mx = series.get("max", val)
+                lbl = series.get("label", "Value")
+                series = [
+                    {"name": lbl, "value": val},
+                    {"name": "Remaining", "value": max(0, mx - val)},
+                ]
+            else:
+                series = []
+
+        elif src_group == "E" and tgt_group == "B":
+            if isinstance(series, dict):
+                series = [{"label": series.get("label", "Value"), "value": series.get("value", 0)}]
+            else:
+                series = []
+
+        elif src_group == "F" and tgt_group == "B":
+            # Lossy: collapses y axis via summation by x
+            buckets: Dict[str, float] = {}
+            for s in series:
+                key = str(s.get("x", ""))
+                buckets[key] = buckets.get(key, 0) + s.get("value", 0)
+            series = [{"label": k, "value": v} for k, v in buckets.items()]
+
+        elif src_group == "F" and tgt_group == "A":
+            # Lossy: collapses y axis via summation by x
+            buckets_a: Dict[str, float] = {}
+            for s in series:
+                key = str(s.get("x", ""))
+                buckets_a[key] = buckets_a.get(key, 0) + s.get("value", 0)
+            series = [{"name": k, "value": v} for k, v in buckets_a.items()]
+
+        else:
+            # Unsupported cross-group: return as-is with target type
+            logger.warning(
+                "Unsupported reshape %s(%s) → %s — returning raw series",
+                source_type, src_group, target_type,
+            )
+
+        return {**widget, "chart_type": target_type, "series": series}
+

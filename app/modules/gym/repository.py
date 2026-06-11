@@ -8,6 +8,7 @@ and audit metadata from OrgRepository.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -20,6 +21,8 @@ from app.modules.gym.routers.constants import (
     SUBSCRIPTION_QUERY,
     TRAINER_QUERY,
     ATTENDANCE_QUERY,
+    INVOICE_QUERY,
+    PAYMENT_QUERY,
     ENTITY_MEMBER,
     ENTITY_PLAN,
     ENTITY_SUBSCRIPTION,
@@ -251,3 +254,146 @@ class GymRepository(OrgRepository):
                 "data.timestamp": {"$gte": start_date},
             },
         )
+
+    # ── Analytics Aggregations ───────────────────────────────────────────
+
+    async def aggregate_plan_popularity(self) -> List[Dict[str, Any]]:
+        """Group active subscriptions by billing_cycle for plan popularity chart.
+
+        Returns chart-ready [{name, value}] sorted by count descending.
+        """
+        pipeline = [
+            {"$match": {
+                **self._ctx.active_filter,
+                **SUBSCRIPTION_QUERY,
+                "data.status": "active",
+            }},
+            {"$group": {
+                "_id": "$data.billing_cycle",
+                "count": {"$sum": 1},
+            }},
+            {"$sort": {"count": -1}},
+        ]
+        results = await self.collection.aggregate(pipeline).to_list(length=50)
+
+        # Map billing_cycle keys to human-readable labels
+        cycle_labels = {
+            "monthly": "Monthly",
+            "quarterly": "Quarterly",
+            "yearly": "Yearly",
+        }
+        return [
+            {
+                "name": cycle_labels.get(r["_id"], r["_id"] or "Other"),
+                "value": r["count"],
+            }
+            for r in results
+        ]
+
+    async def aggregate_payment_status(self) -> List[Dict[str, Any]]:
+        """Group invoices by status for payment status chart.
+
+        Returns chart-ready [{name, value}] with paid/pending/overdue counts.
+        """
+        pipeline = [
+            {"$match": {
+                **self._ctx.active_filter,
+                **INVOICE_QUERY,
+            }},
+            {"$group": {
+                "_id": "$data.status",
+                "count": {"$sum": 1},
+            }},
+            {"$sort": {"count": -1}},
+        ]
+        results = await self.collection.aggregate(pipeline).to_list(length=20)
+
+        # Map raw status values to display labels
+        status_labels = {
+            "paid": "Paid",
+            "pending": "Pending",
+            "overdue": "Overdue",
+            "draft": "Draft",
+            "sent": "Sent",
+            "cancelled": "Cancelled",
+            "partially_paid": "Partially Paid",
+        }
+        return [
+            {
+                "name": status_labels.get(r["_id"], r["_id"] or "Unknown"),
+                "value": r["count"],
+            }
+            for r in results
+        ]
+
+    async def aggregate_daily_revenue(self, days: int = 30) -> List[Dict[str, Any]]:
+        """Aggregate payment amounts by date for the last N days.
+
+        Returns chart-ready [{label, value}] sorted chronologically.
+        Uses data.payment_date for grouping and data.amount for summing.
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+
+        pipeline = [
+            {"$match": {
+                **self._ctx.active_filter,
+                **PAYMENT_QUERY,
+                "data.status": "captured",
+                "data.payment_date": {"$gte": cutoff},
+            }},
+            {"$group": {
+                "_id": "$data.payment_date",
+                "total": {"$sum": "$data.amount"},
+            }},
+            {"$sort": {"_id": 1}},
+        ]
+        results = await self.collection.aggregate(pipeline).to_list(length=days + 5)
+
+        return [
+            {"label": r["_id"], "value": round(r["total"], 2)}
+            for r in results
+        ]
+
+    async def aggregate_monthly_revenue(self) -> List[Dict[str, Any]]:
+        """Aggregate payment amounts by month for the current year.
+
+        Returns chart-ready [{label, value}] with month abbreviations.
+        Falls back to parsing data.payment_date string since dates are
+        stored as ISO strings, not native BSON dates.
+        """
+        year_start = datetime.now(timezone.utc).replace(
+            month=1, day=1, hour=0, minute=0, second=0, microsecond=0
+        ).strftime("%Y-%m-%d")
+
+        pipeline = [
+            {"$match": {
+                **self._ctx.active_filter,
+                **PAYMENT_QUERY,
+                "data.status": "captured",
+                "data.payment_date": {"$gte": year_start},
+            }},
+            # Extract month from ISO date string "YYYY-MM-DD" → "YYYY-MM"
+            {"$addFields": {
+                "_month_key": {"$substr": ["$data.payment_date", 0, 7]},
+            }},
+            {"$group": {
+                "_id": "$_month_key",
+                "total": {"$sum": "$data.amount"},
+            }},
+            {"$sort": {"_id": 1}},
+        ]
+        results = await self.collection.aggregate(pipeline).to_list(length=12)
+
+        month_names = {
+            "01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr",
+            "05": "May", "06": "Jun", "07": "Jul", "08": "Aug",
+            "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dec",
+        }
+        return [
+            {
+                "label": month_names.get(r["_id"].split("-")[1], r["_id"]),
+                "value": round(r["total"], 2),
+            }
+            for r in results
+            if r["_id"]  # guard against None keys
+        ]

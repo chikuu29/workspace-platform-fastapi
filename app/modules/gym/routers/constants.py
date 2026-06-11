@@ -28,6 +28,15 @@ ENTITY_TRAINER = "trainer"
 ENTITY_ATTENDANCE = "attendance"
 """Canonical entity type for member check-in records."""
 
+ENTITY_INVOICE = "invoice"
+"""Canonical entity type for billing invoice documents."""
+
+ENTITY_PAYMENT = "payment"
+"""Canonical entity type for payment transaction records."""
+
+ENTITY_ORDER = "order"
+"""Canonical entity type for billing order documents."""
+
 # ── Base Query Filters ────────────────────────────────────────────────
 # Pre-built dicts used in every MongoDB query to scope results to a
 # single entity type.  Always spread with ** when extending.
@@ -37,6 +46,9 @@ PLAN_QUERY = {"_meta.entity_type": ENTITY_PLAN}
 SUBSCRIPTION_QUERY = {"_meta.entity_type": ENTITY_SUBSCRIPTION}
 ATTENDANCE_QUERY = {"_meta.entity_type": ENTITY_ATTENDANCE}
 TRAINER_QUERY = {"_meta.entity_type": ENTITY_TRAINER}
+INVOICE_QUERY = {"_meta.entity_type": ENTITY_INVOICE}
+PAYMENT_QUERY = {"_meta.entity_type": ENTITY_PAYMENT}
+ORDER_QUERY = {"_meta.entity_type": ENTITY_ORDER}
 
 # ── Allowed Payment Methods ───────────────────────────────────────────
 ALLOWED_PAYMENT_METHODS = {"cash", "upi", "card", "net_banking", "bank_transfer"}

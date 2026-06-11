@@ -44,7 +44,7 @@ async def test_add_member_duplicate_conflict(api_client, mock_db):
     # Pre-wire duplicate check to return an existing member doc
     mock_db["records"].find_one = AsyncMock(return_value={
         "_id": "507f1f77bcf86cd799439011",
-        "_meta": {"record_id": "GYM-MBR-202606-0001"},
+        "_meta": {"id": "GYM-MBR-202606-0001"},
         "data": {"member_id": "M-1"},
     })
 
@@ -74,7 +74,7 @@ async def test_get_members_paginated(api_client, mock_db):
     mock_cursor.to_list = AsyncMock(return_value=[
         {
             "_id": "507f1f77bcf86cd799439011",
-            "_meta": {"record_id": "GYM-MBR-202606-0001"},
+            "_meta": {"id": "GYM-MBR-202606-0001"},
             "data": {"member_id": "M-1", "name": "Alice"},
         }
     ])
@@ -154,12 +154,12 @@ async def test_get_member_membership_success(api_client, mock_db):
     """Verify get_member_membership returns the active membership and plan details."""
     member_doc = {
         "_id": "507f1f77bcf86cd799439011",
-        "_meta": {"record_id": "GYM-MBR-202606-0001"},
+        "_meta": {"id": "GYM-MBR-202606-0001"},
         "data": {"member_id": "M-1", "firstName": "Alice"},
     }
     active_sub = {
         "_id": "507f1f77bcf86cd799439022",
-        "_meta": {"record_id": "GYM-SUB-202606-0001"},
+        "_meta": {"id": "GYM-SUB-202606-0001"},
         "data": {
             "subscription_id": "SUB-1",
             "member_id": "M-1",
@@ -169,7 +169,7 @@ async def test_get_member_membership_success(api_client, mock_db):
     }
     plan_doc = {
         "_id": "507f1f77bcf86cd799439033",
-        "_meta": {"record_id": "GYM-PLN-202606-0001"},
+        "_meta": {"id": "GYM-PLN-202606-0001"},
         "data": {"code": "PRO", "name": "Pro Plan"}
     }
 
@@ -191,7 +191,7 @@ async def test_get_member_orders_success(api_client, mock_db):
     """Verify get_member_orders returns the paginated orders list."""
     member_doc = {
         "_id": "507f1f77bcf86cd799439011",
-        "_meta": {"record_id": "GYM-MBR-202606-0001"},
+        "_meta": {"id": "GYM-MBR-202606-0001"},
         "data": {"member_id": "M-1"},
     }
     mock_db["records"].find_one = AsyncMock(return_value=member_doc)
@@ -229,7 +229,7 @@ async def test_get_member_invoices_success(api_client, mock_db):
     """Verify get_member_invoices returns the paginated invoices list."""
     member_doc = {
         "_id": "507f1f77bcf86cd799439011",
-        "_meta": {"record_id": "GYM-MBR-202606-0001"},
+        "_meta": {"id": "GYM-MBR-202606-0001"},
         "data": {"member_id": "M-1"},
     }
     mock_db["records"].find_one = AsyncMock(return_value=member_doc)
@@ -268,7 +268,7 @@ async def test_get_member_payments_success(api_client, mock_db):
     """Verify get_member_payments returns the paginated payments list."""
     member_doc = {
         "_id": "507f1f77bcf86cd799439011",
-        "_meta": {"record_id": "GYM-MBR-202606-0001"},
+        "_meta": {"id": "GYM-MBR-202606-0001"},
         "data": {"member_id": "M-1"},
     }
     mock_db["records"].find_one = AsyncMock(return_value=member_doc)
@@ -313,7 +313,7 @@ async def test_get_member_attendance_success(api_client, mock_db):
     """Verify get_member_attendance returns the paginated check-ins list."""
     member_doc = {
         "_id": "507f1f77bcf86cd799439011",
-        "_meta": {"record_id": "GYM-MBR-202606-0001"},
+        "_meta": {"id": "GYM-MBR-202606-0001"},
         "data": {"member_id": "M-1"},
     }
     attendance_record = {
@@ -350,7 +350,7 @@ async def test_get_member_timeline_success(api_client, mock_db):
     """Verify get_member_timeline aggregates all activities."""
     member_doc = {
         "_id": "507f1f77bcf86cd799439011",
-        "_meta": {"record_id": "GYM-MBR-202606-0001"},
+        "_meta": {"id": "GYM-MBR-202606-0001"},
         "data": {"member_id": "M-1"},
     }
     attendance_record = {

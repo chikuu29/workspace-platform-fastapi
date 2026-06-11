@@ -11,7 +11,7 @@ async def test_checkout_preview_success(api_client, mock_db, mock_collection):
     """Verify that checkout preview computes correct pricing and dates."""
     member_doc = {
         "_id": "507f1f77bcf86cd799439011",
-        "_meta": {"record_id": "GYM-MBR-202606-0001"},
+        "_meta": {"id": "GYM-MBR-202606-0001"},
         "data": {
             "member_id": "M-1",
             "firstName": "John",
@@ -22,7 +22,7 @@ async def test_checkout_preview_success(api_client, mock_db, mock_collection):
     }
     plan_doc = {
         "_id": "507f1f77bcf86cd799439022",
-        "_meta": {"record_id": "GYM-PLN-202606-0001"},
+        "_meta": {"id": "GYM-PLN-202606-0001"},
         "data": {
             "code": "BASIC_MONTHLY",
             "name": "Basic Monthly Plan",
@@ -98,7 +98,7 @@ async def test_checkout_cash_payment_success(api_client, mock_db, mock_collectio
     """Verify immediate cash checkout creates all billing documents and activates member."""
     member_doc = {
         "_id": "507f1f77bcf86cd799439011",
-        "_meta": {"record_id": "GYM-MBR-202606-0001"},
+        "_meta": {"id": "GYM-MBR-202606-0001"},
         "data": {
             "member_id": "M-1",
             "firstName": "John",
@@ -109,7 +109,7 @@ async def test_checkout_cash_payment_success(api_client, mock_db, mock_collectio
     }
     plan_doc = {
         "_id": "507f1f77bcf86cd799439022",
-        "_meta": {"record_id": "GYM-PLN-202606-0001"},
+        "_meta": {"id": "GYM-PLN-202606-0001"},
         "data": {
             "code": "BASIC_MONTHLY",
             "name": "Basic Monthly Plan",

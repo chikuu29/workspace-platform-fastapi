@@ -57,7 +57,7 @@ class TestGymService:
     async def test_add_member_success(self, service, mock_repo, mock_db):
         # Pre-wire duplicate check (returns None)
         mock_repo.find_duplicate_member = AsyncMock(return_value=None)
-        mock_repo.create_member = AsyncMock(return_value={"_meta": {"record_id": "GYM-MBR-1"}})
+        mock_repo.create_member = AsyncMock(return_value={"_meta": {"id": "GYM-MBR-1"}})
 
         with patch("app.modules.gym.service.SequenceService") as mock_seq_class:
             mock_seq = MagicMock()
@@ -66,7 +66,7 @@ class TestGymService:
 
             res = await service.add_member({"email": "test@test.com"})
             assert res["member_id"] == "M-1"
-            assert res["record_id"] == "GYM-MBR-1"
+            assert res["id"] == "GYM-MBR-1"
 
     @pytest.mark.asyncio
     async def test_create_plan_success(self, service, mock_repo):

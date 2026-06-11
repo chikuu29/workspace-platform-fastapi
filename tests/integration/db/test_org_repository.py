@@ -122,7 +122,7 @@ async def test_org_repository_insert_one(org_repo, mock_db, mock_ctx):
         },
         "_meta": {
             "entity_type": "member",
-            "record_id": ANY,
+            "id": ANY,
             "version": 1,
             "is_deleted": False,
             "created": {"at": ANY, "by": mock_ctx.user_id},
@@ -134,8 +134,8 @@ async def test_org_repository_insert_one(org_repo, mock_db, mock_ctx):
     })
 
     assert result["_id"] == "507f1f77bcf86cd799439011"
-    assert "record_id" in result["_meta"]
-    assert result["_meta"]["record_id"].startswith("GYM-MBR-")
+    assert "id" in result["_meta"]
+    assert result["_meta"]["id"].startswith("GYM-MBR-")
 
 
 @pytest.mark.asyncio
@@ -148,7 +148,7 @@ async def test_org_repository_update_one(org_repo, mock_db, mock_ctx):
     }
 
     result = await org_repo.update_one(
-        {"_meta.record_id": "GYM-MBR-202605-0015"},
+        {"_meta.id": "GYM-MBR-202605-0015"},
         {"status": "inactive"},
     )
 
@@ -156,7 +156,7 @@ async def test_org_repository_update_one(org_repo, mock_db, mock_ctx):
         {
             "_org.org_id": mock_ctx.org_id,
             "_meta.is_deleted": False,
-            "_meta.record_id": "GYM-MBR-202605-0015",
+            "_meta.id": "GYM-MBR-202605-0015",
         },
         {
             "$set": {
@@ -179,13 +179,13 @@ async def test_org_repository_soft_delete(org_repo, mock_db, mock_ctx):
     mock_update_result.modified_count = 1
     mock_collection.update_one.return_value = mock_update_result
 
-    success = await org_repo.soft_delete({"_meta.record_id": "GYM-MBR-001"})
+    success = await org_repo.soft_delete({"_meta.id": "GYM-MBR-001"})
 
     mock_collection.update_one.assert_called_once_with(
         {
             "_org.org_id": mock_ctx.org_id,
             "_meta.is_deleted": False,
-            "_meta.record_id": "GYM-MBR-001",
+            "_meta.id": "GYM-MBR-001",
         },
         {
             "$set": {
@@ -208,10 +208,10 @@ async def test_org_repository_hard_delete(org_repo, mock_db, mock_ctx):
     mock_delete_result.deleted_count = 1
     mock_collection.delete_one.return_value = mock_delete_result
 
-    success = await org_repo.hard_delete({"_meta.record_id": "GYM-MBR-001"})
+    success = await org_repo.hard_delete({"_meta.id": "GYM-MBR-001"})
 
     mock_collection.delete_one.assert_called_once_with({
         "_org.org_id": mock_ctx.org_id,
-        "_meta.record_id": "GYM-MBR-001",
+        "_meta.id": "GYM-MBR-001",
     })
     assert success is True
