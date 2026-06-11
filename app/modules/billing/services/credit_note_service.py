@@ -262,9 +262,9 @@ class CreditNoteService(BaseBillingService):
         """List credit notes with optional filters."""
         query: Dict[str, Any] = {}
         if invoice_ref:
-            query["invoice_ref"] = invoice_ref
+            query["data.invoice_ref"] = invoice_ref
         if status:
-            query["status"] = status
+            query["data.status"] = status
 
         documents = await CreditNoteDoc.org_find(
             self._ctx,

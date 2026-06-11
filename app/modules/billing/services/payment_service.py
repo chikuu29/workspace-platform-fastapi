@@ -165,11 +165,11 @@ class PaymentService(BaseBillingService):
         """List payments with optional filters."""
         query: Dict[str, Any] = {}
         if invoice_ref:
-            query["invoice_ref"] = invoice_ref
+            query["data.invoice_ref"] = invoice_ref
         if method:
-            query["method"] = method
+            query["data.method"] = method
         if status:
-            query["status"] = status
+            query["data.status"] = status
 
         documents = await PaymentDoc.org_find(
             self._ctx,

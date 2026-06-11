@@ -322,7 +322,7 @@ async def get_member_payments(
             message="No payments found.",
         )
 
-    query = {"invoice_ref": {"$in": invoice_refs}}
+    query = {"data.invoice_ref": {"$in": invoice_refs}}
     payments = await PaymentDoc.org_find(
         ctx,
         query,
@@ -481,7 +481,7 @@ async def get_member_timeline(
     if invoice_refs:
         payments = await PaymentDoc.org_find(
             ctx,
-            {"invoice_ref": {"$in": invoice_refs}},
+            {"data.invoice_ref": {"$in": invoice_refs}},
             limit=50,
         )
 

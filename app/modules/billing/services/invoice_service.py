@@ -323,11 +323,11 @@ class InvoiceService(BaseBillingService):
         """List invoices with optional filters."""
         query: Dict[str, Any] = {}
         if status:
-            query["status"] = status
+            query["data.status"] = status
         if customer_ref_id:
-            query["customer_ref.ref_id"] = customer_ref_id
+            query["data.customer_ref.ref_id"] = customer_ref_id
         if source_app:
-            query["source_app"] = source_app
+            query["data.source_app"] = source_app
 
         documents = await InvoiceDoc.org_find(
             self._ctx,

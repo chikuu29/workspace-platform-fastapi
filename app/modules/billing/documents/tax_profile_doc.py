@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from beanie import Indexed
+from pydantic import BaseModel, Field
 
 from app.core.context import OrgContext
 from app.modules.billing.constants import (
@@ -22,46 +23,119 @@ from app.modules.billing.constants import (
 from app.modules.billing.documents.base import BillingDocument
 
 
+class TaxProfileData(BaseModel):
+    """Business fields for TaxProfile stored nested under 'data'."""
+    profile_name: str = ""
+    gstin: str = ""
+    legal_name: str = ""
+    trade_name: str = ""
+    state_code: str = ""
+    state_name: str = ""
+    tax_type: str = TaxType.GST
+    default_tax_category: str = GSTCategory.HIGHER
+    is_composition_scheme: bool = False
+    is_default: bool = False
+
+
 class TaxProfileDoc(BillingDocument):
     """
     Tax profile Beanie document — stored in the tax_profiles collection.
 
     Each profile represents a GSTIN registration with state-level
     configuration and default tax rates.
-
-    Usage:
-        doc = TaxProfileDoc.create_for_org(ctx, entity_type=ENTITY_TAX_PROFILE, ...)
-        await doc.insert()
-
-        default = await TaxProfileDoc.find_default(ctx)
-        profile = await TaxProfileDoc.find_by_gstin(ctx, "29AABCU9603R1ZM")
     """
 
-    # Profile identity
-    profile_name: str = ""
-    gstin: Indexed(str) = ""              # e.g. "29AABCU9603R1ZM"
-    legal_name: str = ""                  # Legal entity name
-    trade_name: str = ""                  # Trade/brand name
+    data: TaxProfileData = Field(default_factory=TaxProfileData)
 
-    # State details — used for inter-state determination
-    state_code: str = ""                  # 2-digit state code (e.g. "29")
-    state_name: str = ""
+    # ── Properties for flat attribute access compatibility ──
 
-    # Tax configuration
-    tax_type: str = TaxType.GST
-    default_tax_category: str = GSTCategory.HIGHER  # Default GST rate category
-    is_composition_scheme: bool = False
+    @property
+    def profile_name(self) -> str:
+        return self.data.profile_name
 
-    # Default flag — one profile per org is the primary
-    is_default: bool = False
+    @profile_name.setter
+    def profile_name(self, value: str) -> None:
+        self.data.profile_name = value
+
+    @property
+    def gstin(self) -> str:
+        return self.data.gstin
+
+    @gstin.setter
+    def gstin(self, value: str) -> None:
+        self.data.gstin = value
+
+    @property
+    def legal_name(self) -> str:
+        return self.data.legal_name
+
+    @legal_name.setter
+    def legal_name(self, value: str) -> None:
+        self.data.legal_name = value
+
+    @property
+    def trade_name(self) -> str:
+        return self.data.trade_name
+
+    @trade_name.setter
+    def trade_name(self, value: str) -> None:
+        self.data.trade_name = value
+
+    @property
+    def state_code(self) -> str:
+        return self.data.state_code
+
+    @state_code.setter
+    def state_code(self, value: str) -> None:
+        self.data.state_code = value
+
+    @property
+    def state_name(self) -> str:
+        return self.data.state_name
+
+    @state_name.setter
+    def state_name(self, value: str) -> None:
+        self.data.state_name = value
+
+    @property
+    def tax_type(self) -> str:
+        return self.data.tax_type
+
+    @tax_type.setter
+    def tax_type(self, value: str) -> None:
+        self.data.tax_type = value
+
+    @property
+    def default_tax_category(self) -> str:
+        return self.data.default_tax_category
+
+    @default_tax_category.setter
+    def default_tax_category(self, value: str) -> None:
+        self.data.default_tax_category = value
+
+    @property
+    def is_composition_scheme(self) -> bool:
+        return self.data.is_composition_scheme
+
+    @is_composition_scheme.setter
+    def is_composition_scheme(self, value: bool) -> None:
+        self.data.is_composition_scheme = value
+
+    @property
+    def is_default(self) -> bool:
+        return self.data.is_default
+
+    @is_default.setter
+    def is_default(self, value: bool) -> None:
+        self.data.is_default = value
 
     class Settings:
         name = "tax_profiles"
         indexes = [
             # GSTIN uniqueness per org
-            [("_org.org_id", 1), ("gstin", 1)],
+            [("_org.org_id", 1), ("data.gstin", 1)],
             # Default profile lookup
-            [("_org.org_id", 1), ("is_default", 1)],
+            [("_org.org_id", 1), ("data.is_default", 1)],
         ]
 
     # ── Convenience Finders (all auto org-scoped) ────────────────
@@ -71,14 +145,14 @@ class TaxProfileDoc(BillingDocument):
         cls, ctx: OrgContext
     ) -> Optional["TaxProfileDoc"]:
         """Find the default tax profile for the current org."""
-        return await cls.org_find_one(ctx, {"is_default": True})
+        return await cls.org_find_one(ctx, {"data.is_default": True})
 
     @classmethod
     async def find_by_gstin(
         cls, ctx: OrgContext, gstin: str
     ) -> Optional["TaxProfileDoc"]:
         """Find a tax profile by its GSTIN number."""
-        return await cls.org_find_one(ctx, {"gstin": gstin})
+        return await cls.org_find_one(ctx, {"data.gstin": gstin})
 
     @classmethod
     async def list_all(
@@ -92,7 +166,7 @@ class TaxProfileDoc(BillingDocument):
         return await cls.org_find(
             ctx,
             {},
-            sort=[("is_default", -1), ("profile_name", 1)],
+            sort=[("data.is_default", -1), ("data.profile_name", 1)],
             skip=skip,
             limit=limit,
         )

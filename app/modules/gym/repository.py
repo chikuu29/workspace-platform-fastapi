@@ -306,7 +306,7 @@ class GymRepository(OrgRepository):
             }},
             {"$sort": {"count": -1}},
         ]
-        results = await self.collection.aggregate(pipeline).to_list(length=20)
+        results = await self._db["invoices"].aggregate(pipeline).to_list(length=20)
 
         # Map raw status values to display labels
         status_labels = {
@@ -337,7 +337,6 @@ class GymRepository(OrgRepository):
         pipeline = [
             {"$match": {
                 **self._ctx.active_filter,
-                **PAYMENT_QUERY,
                 "data.status": "captured",
                 "data.payment_date": {"$gte": cutoff},
             }},
@@ -347,7 +346,7 @@ class GymRepository(OrgRepository):
             }},
             {"$sort": {"_id": 1}},
         ]
-        results = await self.collection.aggregate(pipeline).to_list(length=days + 5)
+        results = await self._db["payments"].aggregate(pipeline).to_list(length=days + 5)
 
         return [
             {"label": r["_id"], "value": round(r["total"], 2)}
@@ -368,7 +367,6 @@ class GymRepository(OrgRepository):
         pipeline = [
             {"$match": {
                 **self._ctx.active_filter,
-                **PAYMENT_QUERY,
                 "data.status": "captured",
                 "data.payment_date": {"$gte": year_start},
             }},
@@ -382,7 +380,7 @@ class GymRepository(OrgRepository):
             }},
             {"$sort": {"_id": 1}},
         ]
-        results = await self.collection.aggregate(pipeline).to_list(length=12)
+        results = await self._db["payments"].aggregate(pipeline).to_list(length=12)
 
         month_names = {
             "01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr",

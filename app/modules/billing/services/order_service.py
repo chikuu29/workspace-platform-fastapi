@@ -303,11 +303,11 @@ class OrderService(BaseBillingService):
         """List orders with optional filters."""
         query: Dict[str, Any] = {}
         if status:
-            query["status"] = status
+            query["data.status"] = status
         if customer_ref_id:
-            query["customer_ref.ref_id"] = customer_ref_id
+            query["data.customer_ref.ref_id"] = customer_ref_id
         if source_ref_id:
-            query["source_ref.ref_id"] = source_ref_id
+            query["data.source_ref.ref_id"] = source_ref_id
 
         documents = await OrderDoc.org_find(
             self._ctx,

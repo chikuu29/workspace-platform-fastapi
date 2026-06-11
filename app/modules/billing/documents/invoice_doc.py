@@ -106,75 +106,221 @@ class LineItemEmbed(BaseModel):
 # ── Invoice Document ─────────────────────────────────────────────────
 
 
-class InvoiceDoc(BillingDocument):
-    """
-    Invoice Beanie document — stored in the invoices collection.
-
-    Lifecycle: draft → sent → partial → paid → (void)
-
-    All business fields are top-level (not nested under a `data` key).
-    The _org and _meta envelope is inherited from BillingDocument.
-
-    Usage:
-        # Create
-        doc = InvoiceDoc.create_for_org(ctx, entity_type=ENTITY_INVOICE, ...)
-        await doc.insert()
-
-        # Find (auto org-scoped)
-        invoice = await InvoiceDoc.find_by_number(ctx, "INV/2026-27/0001")
-        overdue = await InvoiceDoc.find_overdue(ctx, "2026-06-01")
-
-        # Update
-        invoice.status = InvoiceStatus.PAID
-        await invoice.org_save(ctx)
-    """
-
-    # Identity
-    invoice_number: Indexed(str, unique=True) = ""
+class InvoiceData(BaseModel):
+    """Business fields for Invoice stored nested under 'data'."""
+    invoice_number: str = ""
     invoice_type: str = InvoiceType.STANDARD
-
-    # Customer (resolved by the calling app module)
     customer_ref: Optional[CustomerRefEmbed] = None
-
-    # Line items (pricing + tax computed by engines)
     line_items: List[LineItemEmbed] = Field(default_factory=list)
-
-    # Financials (all server-computed — never from client)
     subtotal: float = 0.0
     tax_breakdown: Optional[TaxBreakdownEmbed] = None
     total: float = 0.0
     amount_paid: float = 0.0
     balance_due: float = 0.0
     currency: str = DEFAULT_CURRENCY
-
-    # GST context (passed per-invoice by the calling app)
     seller_gstin: str = ""
     buyer_gstin: str = ""
     place_of_supply: str = ""
     is_inter_state: bool = False
-
-    # Status & dates
     status: str = InvoiceStatus.DRAFT
     issue_date: str = ""
     due_date: str = ""
     payment_terms: str = DEFAULT_PAYMENT_TERMS
-
-    # Source tracking — which app generated this invoice
     source_app: str = ""
-
-    # Notes
     notes: str = ""
     terms_and_conditions: str = ""
+
+
+class InvoiceDoc(BillingDocument):
+    """
+    Invoice Beanie document — stored in the invoices collection.
+
+    Lifecycle: draft → sent → partial → paid → (void)
+    """
+
+    data: InvoiceData = Field(default_factory=InvoiceData)
+
+    # ── Properties for flat attribute access compatibility ──
+
+    @property
+    def invoice_number(self) -> str:
+        return self.data.invoice_number
+
+    @invoice_number.setter
+    def invoice_number(self, value: str) -> None:
+        self.data.invoice_number = value
+
+    @property
+    def invoice_type(self) -> str:
+        return self.data.invoice_type
+
+    @invoice_type.setter
+    def invoice_type(self, value: str) -> None:
+        self.data.invoice_type = value
+
+    @property
+    def customer_ref(self) -> Optional[CustomerRefEmbed]:
+        return self.data.customer_ref
+
+    @customer_ref.setter
+    def customer_ref(self, value: Optional[CustomerRefEmbed]) -> None:
+        self.data.customer_ref = value
+
+    @property
+    def line_items(self) -> List[LineItemEmbed]:
+        return self.data.line_items
+
+    @line_items.setter
+    def line_items(self, value: List[LineItemEmbed]) -> None:
+        self.data.line_items = value
+
+    @property
+    def subtotal(self) -> float:
+        return self.data.subtotal
+
+    @subtotal.setter
+    def subtotal(self, value: float) -> None:
+        self.data.subtotal = value
+
+    @property
+    def tax_breakdown(self) -> Optional[TaxBreakdownEmbed]:
+        return self.data.tax_breakdown
+
+    @tax_breakdown.setter
+    def tax_breakdown(self, value: Optional[TaxBreakdownEmbed]) -> None:
+        self.data.tax_breakdown = value
+
+    @property
+    def total(self) -> float:
+        return self.data.total
+
+    @total.setter
+    def total(self, value: float) -> None:
+        self.data.total = value
+
+    @property
+    def amount_paid(self) -> float:
+        return self.data.amount_paid
+
+    @amount_paid.setter
+    def amount_paid(self, value: float) -> None:
+        self.data.amount_paid = value
+
+    @property
+    def balance_due(self) -> float:
+        return self.data.balance_due
+
+    @balance_due.setter
+    def balance_due(self, value: float) -> None:
+        self.data.balance_due = value
+
+    @property
+    def currency(self) -> str:
+        return self.data.currency
+
+    @currency.setter
+    def currency(self, value: str) -> None:
+        self.data.currency = value
+
+    @property
+    def seller_gstin(self) -> str:
+        return self.data.seller_gstin
+
+    @seller_gstin.setter
+    def seller_gstin(self, value: str) -> None:
+        self.data.seller_gstin = value
+
+    @property
+    def buyer_gstin(self) -> str:
+        return self.data.buyer_gstin
+
+    @buyer_gstin.setter
+    def buyer_gstin(self, value: str) -> None:
+        self.data.buyer_gstin = value
+
+    @property
+    def place_of_supply(self) -> str:
+        return self.data.place_of_supply
+
+    @place_of_supply.setter
+    def place_of_supply(self, value: str) -> None:
+        self.data.place_of_supply = value
+
+    @property
+    def is_inter_state(self) -> bool:
+        return self.data.is_inter_state
+
+    @is_inter_state.setter
+    def is_inter_state(self, value: bool) -> None:
+        self.data.is_inter_state = value
+
+    @property
+    def status(self) -> str:
+        return self.data.status
+
+    @status.setter
+    def status(self, value: str) -> None:
+        self.data.status = value
+
+    @property
+    def issue_date(self) -> str:
+        return self.data.issue_date
+
+    @issue_date.setter
+    def issue_date(self, value: str) -> None:
+        self.data.issue_date = value
+
+    @property
+    def due_date(self) -> str:
+        return self.data.due_date
+
+    @due_date.setter
+    def due_date(self, value: str) -> None:
+        self.data.due_date = value
+
+    @property
+    def payment_terms(self) -> str:
+        return self.data.payment_terms
+
+    @payment_terms.setter
+    def payment_terms(self, value: str) -> None:
+        self.data.payment_terms = value
+
+    @property
+    def source_app(self) -> str:
+        return self.data.source_app
+
+    @source_app.setter
+    def source_app(self, value: str) -> None:
+        self.data.source_app = value
+
+    @property
+    def notes(self) -> str:
+        return self.data.notes
+
+    @notes.setter
+    def notes(self, value: str) -> None:
+        self.data.notes = value
+
+    @property
+    def terms_and_conditions(self) -> str:
+        return self.data.terms_and_conditions
+
+    @terms_and_conditions.setter
+    def terms_and_conditions(self, value: str) -> None:
+        self.data.terms_and_conditions = value
 
     class Settings:
         # Collection name in MongoDB
         name = "invoices"
         # Compound indexes for common query patterns
         indexes = [
+            # Unique invoice number lookup
+            [("_org.org_id", 1), ("data.invoice_number", 1)],
             # Overdue lookup: org + status + due_date
-            [("_org.org_id", 1), ("status", 1), ("due_date", 1)],
+            [("_org.org_id", 1), ("data.status", 1), ("data.due_date", 1)],
             # Customer history: org + customer ref_id
-            [("_org.org_id", 1), ("customer_ref.ref_id", 1)],
+            [("_org.org_id", 1), ("data.customer_ref.ref_id", 1)],
         ]
 
     # ── Convenience Finders (all auto org-scoped) ────────────────
@@ -184,7 +330,7 @@ class InvoiceDoc(BillingDocument):
         cls, ctx: OrgContext, invoice_number: str
     ) -> Optional["InvoiceDoc"]:
         """Find an invoice by its unique number within the current org."""
-        return await cls.org_find_one(ctx, {"invoice_number": invoice_number})
+        return await cls.org_find_one(ctx, {"data.invoice_number": invoice_number})
 
     @classmethod
     async def find_by_customer(
@@ -198,7 +344,7 @@ class InvoiceDoc(BillingDocument):
         """Find invoices for a specific customer."""
         return await cls.org_find(
             ctx,
-            {"customer_ref.ref_id": ref_id},
+            {"data.customer_ref.ref_id": ref_id},
             sort=[("_meta.created.at", -1)],
             skip=skip,
             limit=limit,
@@ -217,10 +363,10 @@ class InvoiceDoc(BillingDocument):
         return await cls.org_find(
             ctx,
             {
-                "status": {"$in": [InvoiceStatus.SENT, InvoiceStatus.PARTIAL]},
-                "due_date": {"$lt": as_of_date},
+                "data.status": {"$in": [InvoiceStatus.SENT, InvoiceStatus.PARTIAL]},
+                "data.due_date": {"$lt": as_of_date},
             },
-            sort=[("due_date", 1)],
+            sort=[("data.due_date", 1)],
             skip=skip,
             limit=limit,
         )

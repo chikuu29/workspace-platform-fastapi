@@ -124,6 +124,47 @@ class BillingDocument(Document):
     org: OrgBlock = Field(alias="_org")
     meta_info: MetaBlock = Field(alias="_meta")
 
+    def __init__(self, **data: Any):
+        # Bundle flat arguments matching the nested data schema into the data field
+        data_field = self.model_fields.get("data")
+        if data_field and hasattr(data_field.annotation, "model_fields"):
+            submodel_class = data_field.annotation
+            submodel_fields = submodel_class.model_fields
+            
+            nested_data = data.get("data", {})
+            if isinstance(nested_data, dict):
+                nested_data = dict(nested_data)
+            elif hasattr(nested_data, "model_dump"):
+                nested_data = nested_data.model_dump()
+            else:
+                nested_data = {}
+                
+            keys_to_pop = [k for k in list(data.keys()) if k in submodel_fields]
+            for k in keys_to_pop:
+                nested_data[k] = data.pop(k)
+                
+            if nested_data:
+                data["data"] = submodel_class(**nested_data)
+                
+        super().__init__(**data)
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "data":
+            raise AttributeError(name)
+        if "data" in self.__dict__ and self.__dict__["data"] is not None:
+            submodel = self.__dict__["data"]
+            if hasattr(submodel, name):
+                return getattr(submodel, name)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+    def __setattr__(self, name: str, val: Any) -> None:
+        if name != "data" and "data" in self.__dict__ and self.__dict__["data"] is not None:
+            submodel = self.__dict__["data"]
+            if hasattr(submodel, "model_fields") and name in submodel.model_fields:
+                setattr(submodel, name, val)
+                return
+        super().__setattr__(name, val)
+
     class Settings:
         name = "billing_base"
         use_state_management = True

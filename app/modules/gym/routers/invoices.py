@@ -126,7 +126,7 @@ async def create_membership_order(
 
     repo = OrgRepository(db, "records", ctx)
 
-    # ── 1. Verify member ─────────────────────────────────────────────
+    # ── 1. Verify member exists ──────────────────────────────────────
     member_doc = await repo.find_one({
         **MEMBER_QUERY,
         "$or": [
@@ -136,6 +136,8 @@ async def create_membership_order(
     })
     if not member_doc:
         not_found(message=f"Member '{member_id}' not found.")
+
+    resolved_member_id = member_doc["data"].get("member_id")
 
     # ── 2. Verify plan ───────────────────────────────────────────────
     plan_doc = await repo.find_one({
@@ -191,7 +193,7 @@ async def create_membership_order(
 
     # Serialize gym context into notes for downstream steps
     gym_context_json = _build_gym_context(
-        member_id=member_id,
+        member_id=resolved_member_id,
         plan_code=plan_code,
         billing_cycle=billing_cycle,
         start_date=start_date,
@@ -202,7 +204,7 @@ async def create_membership_order(
     order_input = CreateOrderInput(
         customer_ref=CustomerRefSchema(
             ref_type="member",
-            ref_id=member_id,
+            ref_id=resolved_member_id,
             name=member_name,
             email=member_data.get("email", ""),
             phone=member_data.get("phone", ""),
@@ -226,7 +228,7 @@ async def create_membership_order(
         source_ref={
             "app": ctx.app_code,
             "ref_type": "membership_intent",
-            "ref_id": member_id,
+            "ref_id": resolved_member_id,
         },
         # Full gym context stored as structured JSON in notes
         notes=gym_context_json,
@@ -238,7 +240,7 @@ async def create_membership_order(
         message="Order created successfully. Review and confirm to generate invoice.",
         data={
             "order_number": order_doc.order_number,
-            "member_id": member_id,
+            "member_id": resolved_member_id,
             "member_name": member_name,
             "plan_name": plan_data.get("name"),
             "plan_code": plan_code,
@@ -572,6 +574,8 @@ async def pay_gym_invoice(
     if not member_doc:
         not_found(message=f"Member '{member_id}' not found.")
 
+    resolved_member_id = member_doc["data"].get("member_id")
+
     # ── 4. Verify plan still active ──────────────────────────────────
     plan_doc = await repo.find_one({
         **PLAN_QUERY,
@@ -584,7 +588,7 @@ async def pay_gym_invoice(
     # ── 5. Guard: block duplicate active subscription ─────────────────
     active_sub = await repo.find_one({
         **SUBSCRIPTION_QUERY,
-        "data.member_id": member_id,
+        "data.member_id": resolved_member_id,
         "data.status": "active",
     })
     if active_sub:
@@ -618,7 +622,8 @@ async def pay_gym_invoice(
     effective_end = end_date or _calculate_end_date(effective_start, billing_cycle)
 
     subscription_data = {
-        "member_id": member_id,
+        "member_id": resolved_member_id,
+        "member_record_id": member_doc["_meta"]["id"],
         "member_name": member_name,
         "plan_code": plan_code,
         "plan_name": plan_data.get("name", ""),
@@ -648,7 +653,7 @@ async def pay_gym_invoice(
 
     # ── 8. Activate member ────────────────────────────────────────────
     await repo.update_one(
-        {**MEMBER_QUERY, "data.member_id": member_id},
+        {**MEMBER_QUERY, "data.member_id": resolved_member_id},
         {
             "plan": plan_data.get("name", plan_code),
             "plan_code": plan_code,
@@ -673,7 +678,7 @@ async def pay_gym_invoice(
             "order_number": order_doc.order_number,
             "subscription_id": subscription_id,
             "subscription_status": "active",
-            "member_id": member_id,
+            "member_id": resolved_member_id,
             "plan_name": plan_data.get("name"),
             "start_date": effective_start,
             "end_date": effective_end,

@@ -360,10 +360,19 @@ class GymBillingService:
 
         # 3. Update member → active
         if member_id:
-            await repo.update_one(
-                {**MEMBER_QUERY, "data.member_id": member_id},
-                {"status": "active"},
-            )
+            member_doc = await repo.find_one({
+                **MEMBER_QUERY,
+                "$or": [
+                    {"data.member_id": member_id},
+                    {"_meta.id": member_id},
+                ],
+            })
+            if member_doc:
+                resolved_member_id = member_doc["data"].get("member_id")
+                await repo.update_one(
+                    {**MEMBER_QUERY, "data.member_id": resolved_member_id},
+                    {"status": "active"},
+                )
 
         logger.info(
             "Membership activated: sub=%s member=%s method=%s org=%s",

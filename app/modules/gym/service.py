@@ -443,7 +443,14 @@ class GymService:
         total = await self.repository.count_members()
         active = await self.repository.count({**MEMBER_QUERY, "data.status": "active"})
         attention = await self.repository.count({**MEMBER_QUERY, "data.status": "attention"})
-        frozen = await self.repository.count({**MEMBER_QUERY, "data.status": "frozen"})
+        frozen = await self.repository.count({
+            **MEMBER_QUERY,
+            "$or": [
+                {"data.status": "frozen"},
+                {"data.status": {"$exists": False}},
+                {"data.status": None},
+            ],
+        })
 
         now = datetime.now(timezone.utc)
         month_start = now.replace(
@@ -480,20 +487,21 @@ class GymService:
             sort=[("_meta.created.at", -1)],
             limit=5,
         )
-        recent_members = [
-            {
-                "id": d["_meta"]["id"],
-                "member_id": d["data"].get("member_id", "N/A"),
+        recent_members = []
+        for d in recent_docs:
+            enriched = await self._enrich_member(d)
+            plan_name = enriched["subscription"]["plan_name"] if enriched.get("subscription") else "N/A"
+            recent_members.append({
+                "id": enriched["_meta"]["id"],
+                "member_id": enriched["data"].get("member_id") or "N/A",
                 "name": (
-                    f"{d['data'].get('firstName', '')} "
-                    f"{d['data'].get('lastName', '')}"
+                    f"{enriched['data'].get('firstName', '')} "
+                    f"{enriched['data'].get('lastName', '')}"
                 ).strip() or "Unknown",
-                "plan": d["data"].get("plan", "N/A"),
-                "created_at": d["_meta"]["created"]["at"],
-                "status": d["data"].get("status", "active"),
-            }
-            for d in recent_docs
-        ]
+                "plan": plan_name,
+                "created_at": enriched["_meta"]["created"]["at"],
+                "status": enriched["data"].get("status", "frozen"),
+            })
 
         return {
             "kpis": {
@@ -598,8 +606,15 @@ class GymService:
     async def _widget_membership_distribution(self, params: Dict[str, str]) -> Dict[str, Any]:
         """Membership distribution widget — pie chart of member statuses."""
         active = await self.repository.count({**MEMBER_QUERY, "data.status": "active"})
-        frozen = await self.repository.count({**MEMBER_QUERY, "data.status": "frozen"})
         attention = await self.repository.count({**MEMBER_QUERY, "data.status": "attention"})
+        frozen = await self.repository.count({
+            **MEMBER_QUERY,
+            "$or": [
+                {"data.status": "frozen"},
+                {"data.status": {"$exists": False}},
+                {"data.status": None},
+            ],
+        })
 
         return {
             "widget": "membership_distribution",

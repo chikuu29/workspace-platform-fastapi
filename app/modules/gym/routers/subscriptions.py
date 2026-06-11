@@ -87,6 +87,8 @@ async def activate_subscription(
     if not member_doc:
         not_found(message=f"Member '{member_id}' not found.")
 
+    resolved_member_id = member_doc["data"].get("member_id")
+
     # ── 2. Verify plan exists and is active ──────────────────────────
     plan_doc = await repo.find_one({
         **PLAN_QUERY,
@@ -99,12 +101,12 @@ async def activate_subscription(
     # ── 3. Block if member already has an active subscription ────────
     existing_sub = await repo.find_one({
         **SUBSCRIPTION_QUERY,
-        "data.member_id": member_id,
+        "data.member_id": resolved_member_id,
         "data.status": "active",
     })
     if existing_sub:
         conflict(
-            message=f"Member '{member_id}' already has an active subscription.",
+            message=f"Member '{resolved_member_id}' already has an active subscription.",
             error_code="ACTIVE_SUBSCRIPTION_EXISTS",
             details={
                 "existing_subscription_id": existing_sub["_meta"]["id"],
@@ -144,7 +146,7 @@ async def activate_subscription(
     billing_input = CreateInvoiceInput(
         customer_ref=CustomerRefSchema(
             ref_type="member",
-            ref_id=member_id,
+            ref_id=resolved_member_id,
             name=member_name,
             email=member_doc["data"].get("email", ""),
             phone=member_doc["data"].get("phone", ""),
@@ -200,7 +202,8 @@ async def activate_subscription(
 
     # ── 7. Build subscription record ─────────────────────────────────
     subscription_data = {
-        "member_id": member_id,
+        "member_id": resolved_member_id,
+        "member_record_id": member_doc["_meta"]["id"],
         "member_name": member_name,
         "plan_code": plan_code,
         "plan_name": plan_data.get("name", ""),
@@ -230,7 +233,7 @@ async def activate_subscription(
 
     # ── 8. Update member with plan + status ──────────────────────────
     await repo.update_one(
-        {**MEMBER_QUERY, "data.member_id": member_id},
+        {**MEMBER_QUERY, "data.member_id": resolved_member_id},
         {
             "plan": plan_data.get("name", plan_code),
             "plan_code": plan_code,
@@ -244,7 +247,7 @@ async def activate_subscription(
         data={
             "subscription": subscription_doc,
             "subscription_id": subscription_id,
-            "member_id": member_id,
+            "member_id": resolved_member_id,
             "plan_name": plan_data.get("name"),
             "start_date": start_date,
             "end_date": end_date,

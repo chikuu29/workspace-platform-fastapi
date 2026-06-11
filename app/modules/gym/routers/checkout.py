@@ -89,6 +89,8 @@ async def preview_checkout(
     if not member_doc:
         not_found(message=f"Member '{member_id}' not found.")
 
+    resolved_member_id = member_doc["data"].get("member_id")
+
     # 2. Verify plan exists and is active
     plan_doc = await repo.find_one({
         **PLAN_QUERY,
@@ -150,7 +152,7 @@ async def preview_checkout(
         message="Checkout preview generated.",
         data={
             "member": {
-                "member_id": member_id,
+                "member_id": resolved_member_id,
                 "name": member_name,
                 "email": member_doc["data"].get("email"),
                 "phone": member_doc["data"].get("phone"),
@@ -231,6 +233,8 @@ async def execute_checkout(
     if not member_doc:
         not_found(message=f"Member '{member_id}' not found.")
 
+    resolved_member_id = member_doc["data"].get("member_id")
+
     # 2. Verify plan exists and is active
     plan_doc = await repo.find_one({
         **PLAN_QUERY,
@@ -243,12 +247,12 @@ async def execute_checkout(
     # 3. Block if already active
     active_sub = await repo.find_one({
         **SUBSCRIPTION_QUERY,
-        "data.member_id": member_id,
+        "data.member_id": resolved_member_id,
         "data.status": "active",
     })
     if active_sub:
         conflict(
-            message=f"Member '{member_id}' already has an active subscription.",
+            message=f"Member '{resolved_member_id}' already has an active subscription.",
             error_code="ACTIVE_SUBSCRIPTION_EXISTS",
             details={
                 "existing_subscription_id": active_sub["data"].get("subscription_id"),
@@ -261,7 +265,7 @@ async def execute_checkout(
     await repo.collection.delete_many({
         **SUBSCRIPTION_QUERY,
         "_org.org_id": ctx.org_id,
-        "data.member_id": member_id,
+        "data.member_id": resolved_member_id,
         "data.plan_code": plan_code,
         "data.status": "pending",
     })
@@ -289,7 +293,8 @@ async def execute_checkout(
     discount_type, discount_value = _get_mock_discount(coupon_code)
 
     subscription_data = {
-        "member_id": member_id,
+        "member_id": resolved_member_id,
+        "member_record_id": member_doc["_meta"]["id"],
         "member_name": member_name,
         "plan_code": plan_code,
         "plan_name": plan_data.get("name", ""),
@@ -370,7 +375,7 @@ async def execute_checkout(
             message="Membership activated successfully!",
             data={
                 "subscription_id": subscription_id,
-                "member_id": member_id,
+                "member_id": resolved_member_id,
                 "plan_name": plan_data.get("name"),
                 "order_number": order_doc.order_number,
                 "invoice_number": invoice_doc.invoice_number,
@@ -403,7 +408,7 @@ async def execute_checkout(
             "Checkout payment link generated and dispatched via %s: invoice=%s member=%s url=%s",
             send_link_via,
             invoice_doc.invoice_number,
-            member_id,
+            resolved_member_id,
             payment_link_url,
         )
 

@@ -61,15 +61,21 @@ async def connect_db() -> None:
         # ── Create indexes for the unified records collection ────────
         await _ensure_indexes(_db)
 
-        # ── Initialize Beanie ODM ───────────────────────────────────────────
-        # All billing Beanie document classes must be registered here.
-        # Beanie auto-creates indexes defined in each document's Settings.indexes.
+        # Drop existing indexes on the billing collections to avoid conflicts with new schema structure
         from app.modules.billing.documents.order_doc import OrderDoc
         from app.modules.billing.documents.invoice_doc import InvoiceDoc
         from app.modules.billing.documents.payment_doc import PaymentDoc
         from app.modules.billing.documents.credit_note_doc import CreditNoteDoc
         from app.modules.billing.documents.receipt_doc import ReceiptDoc
         from app.modules.billing.documents.tax_profile_doc import TaxProfileDoc
+
+        billing_collections = ["orders", "invoices", "payments", "credit_notes", "receipts", "tax_profiles"]
+        for coll_name in billing_collections:
+            try:
+                await _db[coll_name].drop_indexes()
+                logger.info("Dropped indexes on collection: %s", coll_name)
+            except Exception as e:
+                logger.debug("Could not drop indexes on %s: %s", coll_name, e)
 
         await init_beanie(
             database=_db,
