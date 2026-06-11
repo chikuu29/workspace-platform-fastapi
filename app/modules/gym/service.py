@@ -64,7 +64,7 @@ class GymService:
             return member
 
         sub_doc = await self.repository.find_active_subscription(member_id)
-
+        print(f"sub_doc",sub_doc)
         if sub_doc:
             sub = sub_doc["data"]
             member["subscription"] = {
@@ -458,11 +458,13 @@ class GymService:
             sort=[("_meta.created.at", -1)],
             limit=5,
         )
+        print(f"recent_docs",recent_docs)
         recent_members = []
         for d in recent_docs:
             enriched = await self._enrich_member(d)
             recent_members.append({
                 "id": enriched["_meta"]["id"],
+                "member_id": enriched["data"].get("member_id", "N/A"),
                 "name": (
                     f"{enriched['data'].get('firstName', '')} "
                     f"{enriched['data'].get('lastName', '')}"
