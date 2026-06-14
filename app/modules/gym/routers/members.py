@@ -616,6 +616,33 @@ async def get_member_timeline(
         message="Timeline retrieved successfully.",
     )
 
+@router.get("/members/{identifier}/qr")
+async def get_member_qr(
+    identifier: str,
+    service: GymService = Depends(get_gym_service),
+):
+    """
+    Generate and stream a PNG QR code image for a member.
+    The QR payload is 'gym:{member_id}'.
+    """
+    import io
+    from fastapi.responses import StreamingResponse
+
+    img_bytes = await service.generate_member_qr(identifier)
+    return StreamingResponse(io.BytesIO(img_bytes), media_type="image/png")
+
+@router.post("/members/{identifier}/email-card")
+async def email_membership_card(
+    identifier: str,
+    service: GymService = Depends(get_gym_service),
+):
+    """
+    Send a digital membership pass with QR code via email (simulated).
+    """
+    await service.email_member_card(identifier)
+    return ok(message="Membership card emailed successfully.")
+
+
 
 
 

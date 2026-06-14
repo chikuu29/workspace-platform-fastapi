@@ -135,7 +135,7 @@ async def test_checkout_cash_payment_success(api_client, mock_db, mock_collectio
         }
     }
     records_col = MagicMock()
-    records_col.find_one = AsyncMock(side_effect=[member_doc, plan_doc, None, sub_doc])
+    records_col.find_one = AsyncMock(side_effect=[member_doc, plan_doc, None, sub_doc, member_doc])
     records_col.insert_one = AsyncMock(return_value=MagicMock(inserted_id="sub_id"))
     records_col.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
     records_col.delete_many = AsyncMock(return_value=MagicMock(deleted_count=0))

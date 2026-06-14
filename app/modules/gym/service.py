@@ -820,3 +820,64 @@ class GymService:
 
         return {**widget, "chart_type": target_type, "series": series}
 
+    async def generate_member_qr(self, identifier: str) -> bytes:
+        """
+        Generate a QR code image as PNG bytes for a given member.
+        The QR code payload is formatted as 'gym:{member_id}'.
+        """
+        import qrcode
+        import io
+
+        member_doc = await self.repository.get_member(identifier)
+        if not member_doc:
+            not_found(message=f"Member '{identifier}' not found.")
+
+        member_id = member_doc["data"].get("member_id")
+        if not member_id:
+            bad_request(message="Member has no valid member_id generated.")
+
+        payload = member_id
+
+        # Generate QR code using pillow
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(payload)
+        qr.make(fit=True)
+
+        img = qr.make_image(fill_color="black", back_color="white")
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        return img_byte_arr.getvalue()
+
+    async def email_member_card(self, identifier: str) -> None:
+        """
+        Simulate sending a digital membership pass with QR code via email.
+        """
+        member_doc = await self.get_member_detail(identifier)
+        email = member_doc["data"].get("email")
+        if not email:
+            bad_request(message="Member does not have a registered email address.")
+
+        member_id = member_doc["data"].get("member_id")
+        first_name = member_doc["data"].get("firstName", "")
+        last_name = member_doc["data"].get("lastName", "")
+        name = f"{first_name} {last_name}".strip()
+        sub_info = member_doc.get("subscription") or {}
+        plan_name = sub_info.get("plan_name", "No Plan")
+        end_date = sub_info.get("end_date", "N/A")
+
+        logger.info(
+            f"Simulating Membership Pass Email to '{email}':\n"
+            f"  - Name: {name}\n"
+            f"  - ID: {member_id}\n"
+            f"  - Active Plan: {plan_name}\n"
+            f"  - Expiration: {end_date}\n"
+            f"  - QR Code Payload: {member_id}"
+        )
+
+

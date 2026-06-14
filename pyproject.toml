@@ -23,6 +23,8 @@ dependencies = [
     "python-dateutil>=2.9.0",
     "structlog>=25.5.0",
     "pytest-asyncio>=1.4.0",
+    "qrcode>=8.0.0",
+    "pillow>=10.2.0",
 ]
 
 [tool.pytest.ini_options]
