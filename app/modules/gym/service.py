@@ -820,6 +820,85 @@ class GymService:
 
         return {**widget, "chart_type": target_type, "series": series}
 
+    async def get_member_attendance_report(
+        self, member_id: str, year: Optional[int] = None, month: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Retrieve month-wise attendance report and full history for a member.
+
+        Args:
+            member_id: The member's ID or record ID.
+            year: Optional calendar year.
+            month: Optional calendar month (1-indexed).
+
+        Returns:
+            A dictionary containing checked_in_days (list of integers),
+            and history (list of check-in records).
+        """
+        member_doc = await self.repository.get_member(member_id)
+        if not member_doc:
+            not_found(message=f"Member '{member_id}' not found.")
+
+        actual_member_id = member_doc["data"].get("member_id")
+        if not actual_member_id:
+            return {
+                "checked_in_days": [],
+                "history": [],
+                "year": year or datetime.now(timezone.utc).year,
+                "month": month or datetime.now(timezone.utc).month
+            }
+
+        now = datetime.now(timezone.utc)
+        target_year = year or now.year
+        target_month = month or now.month
+
+        # Query check-ins for this member
+        query = {
+            **ATTENDANCE_QUERY,
+            "data.member_id": actual_member_id,
+        }
+
+        # Fetch recent check-ins for history log (limit 200)
+        attendance_docs = await self.repository.find(
+            query,
+            sort=[("data.date", -1), ("data.timestamp", -1)],
+            limit=200
+        )
+
+        history = []
+        checked_in_days = []
+        month_prefix = f"{target_year:04d}-{target_month:02d}-"
+
+        for doc in attendance_docs:
+            data = doc.get("data", {})
+            date_str = data.get("date", "")
+
+            # If it belongs to target month/year, extract the day
+            if date_str.startswith(month_prefix):
+                try:
+                    day_part = int(date_str.split("-")[2])
+                    checked_in_days.append(day_part)
+                except (ValueError, IndexError):
+                    pass
+
+            history.append({
+                "id": doc.get("_meta", {}).get("id") or str(doc.get("_id")),
+                "timestamp": data.get("timestamp"),
+                "date": date_str,
+                "hour": data.get("hour"),
+                "has_active_plan": data.get("has_active_plan", True),
+                "member_name": data.get("member_name", "")
+            })
+
+        # Remove duplicates and sort
+        checked_in_days = sorted(list(set(checked_in_days)))
+
+        return {
+            "checked_in_days": checked_in_days,
+            "history": history,
+            "year": target_year,
+            "month": target_month
+        }
+
     async def generate_member_qr(self, identifier: str) -> bytes:
         """
         Generate a QR code image as PNG bytes for a given member.

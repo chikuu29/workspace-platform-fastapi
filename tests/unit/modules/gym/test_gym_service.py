@@ -84,3 +84,31 @@ class TestGymService:
 
         res = await service.member_checkin({"member_id": "M-1"})
         assert res["data"]["member_id"] == "M-1"
+
+    @pytest.mark.asyncio
+    async def test_get_member_attendance_report_success(self, service, mock_repo):
+        mock_repo.get_member = AsyncMock(return_value={
+            "_meta": {"id": "GYM-MBR-1"},
+            "data": {"member_id": "M-1", "firstName": "John", "lastName": "Doe"}
+        })
+        mock_repo.find = AsyncMock(return_value=[
+            {
+                "_meta": {"id": "REC-1"},
+                "data": {
+                    "member_id": "M-1",
+                    "date": "2026-06-15",
+                    "timestamp": "2026-06-15T08:00:00Z",
+                    "hour": 8,
+                    "has_active_plan": True,
+                    "member_name": "John Doe"
+                }
+            }
+        ])
+
+        res = await service.get_member_attendance_report("GYM-MBR-1", 2026, 6)
+        assert res["year"] == 2026
+        assert res["month"] == 6
+        assert res["checked_in_days"] == [15]
+        assert len(res["history"]) == 1
+        assert res["history"][0]["id"] == "REC-1"
+

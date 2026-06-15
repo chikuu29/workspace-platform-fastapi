@@ -38,6 +38,24 @@ async def get_dashboard_analytics(
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  MEMBER ATTENDANCE REPORTS
+# ══════════════════════════════════════════════════════════════════════
+
+from typing import Optional
+
+@router.get("/analytics/attendance/member/{member_id}")
+async def get_member_attendance_report(
+    member_id: str,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    service: GymService = Depends(get_gym_service),
+):
+    """Retrieve month-wise attendance report and full history for a member."""
+    res = await service.get_member_attendance_report(member_id, year, month)
+    return ok(data=res, message="Member attendance report")
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  DYNAMIC WIDGET DATA
 # ══════════════════════════════════════════════════════════════════════
 
